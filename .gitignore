@@ -27,6 +27,12 @@ go.work.sum
 # env file
 .env
 
+# Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/package-lock.json
+frontend/build/
+
 # Editor/IDE
 # .idea/
 # .vscode/
