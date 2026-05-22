@@ -18,35 +18,42 @@ type Claims struct {
 
 const tokenTTL = 24 * time.Hour
 
+// jwtKey is read once at startup via Init and reused on every request.
+var jwtKey []byte
+
+// Init reads JWT_SECRET from the environment and caches it.
+// Returns an error if the variable is unset. Call this in main before starting the server.
+func Init() error {
+	s := os.Getenv("JWT_SECRET")
+	if s == "" {
+		return errors.New("JWT_SECRET environment variable is not set")
+	}
+	jwtKey = []byte(s)
+	return nil
+}
+
 // GenerateToken creates a signed HS256 JWT for the given user.
 func GenerateToken(userID, role string) (string, error) {
-	secret := jwtSecret()
-	if secret == "" {
-		return "", errors.New("JWT_SECRET environment variable is not set")
-	}
-
+	now := time.Now()
 	claims := Claims{
 		UserID: userID,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(tokenTTL)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(tokenTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+	return token.SignedString(jwtKey)
 }
 
 // ParseToken validates a JWT string and returns its Claims.
 func ParseToken(tokenStr string) (*Claims, error) {
-	secret := jwtSecret()
-
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
-		return []byte(secret), nil
+		return jwtKey, nil
 	})
 	if err != nil {
 		return nil, err
@@ -57,8 +64,4 @@ func ParseToken(tokenStr string) (*Claims, error) {
 		return nil, errors.New("invalid token claims")
 	}
 	return claims, nil
-}
-
-func jwtSecret() string {
-	return os.Getenv("JWT_SECRET")
 }

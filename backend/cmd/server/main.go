@@ -11,18 +11,23 @@ import (
 
 	"cs-educational-platform/backend/internal/auth"
 	"cs-educational-platform/backend/internal/db"
+	"cs-educational-platform/backend/internal/httputil"
 )
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Connect to PostgreSQL
 	if err := db.Connect(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	if err := auth.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		os.Exit(1)
+	}
 
 	mux := http.NewServeMux()
 
@@ -38,9 +43,12 @@ func main() {
 	mux.HandleFunc("POST /auth/register", auth.RegisterHandler)
 	mux.HandleFunc("POST /auth/login", auth.LoginHandler)
 
-	// ── Protected route example (requires valid JWT) ─────────────────────────
+	// ── Protected routes ─────────────────────────────────────────────────────
 	mux.Handle("GET /me", auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"user_id":%q,"role":%q}`, auth.UserIDFromCtx(r.Context()), auth.RoleFromCtx(r.Context()))
+		httputil.WriteJSON(w, http.StatusOK, map[string]string{
+			"user_id": auth.UserIDFromCtx(r.Context()),
+			"role":    auth.RoleFromCtx(r.Context()),
+		})
 	})))
 
 	srv := &http.Server{
@@ -50,7 +58,6 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	// Graceful shutdown on SIGINT / SIGTERM
 	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
