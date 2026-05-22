@@ -9,29 +9,47 @@ import (
 	"syscall"
 	"time"
 
+	"cs-educational-platform/backend/internal/auth"
 	"cs-educational-platform/backend/internal/db"
+	"cs-educational-platform/backend/internal/httputil"
 )
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Connect to PostgreSQL
 	if err := db.Connect(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
+	if err := auth.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		os.Exit(1)
+	}
+
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// ── Public routes ────────────────────────────────────────────────────────
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Pool.Ping(r.Context()); err != nil {
 			http.Error(w, "database unreachable", http.StatusServiceUnavailable)
 			return
 		}
 		fmt.Fprintln(w, "ok")
 	})
+
+	mux.HandleFunc("POST /auth/register", auth.RegisterHandler)
+	mux.HandleFunc("POST /auth/login", auth.LoginHandler)
+
+	// ── Protected routes ─────────────────────────────────────────────────────
+	mux.Handle("GET /me", auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httputil.WriteJSON(w, http.StatusOK, map[string]string{
+			"user_id": auth.UserIDFromCtx(r.Context()),
+			"role":    auth.RoleFromCtx(r.Context()),
+		})
+	})))
 
 	srv := &http.Server{
 		Addr:         ":8080",
@@ -40,7 +58,6 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	// Graceful shutdown on SIGINT / SIGTERM
 	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
