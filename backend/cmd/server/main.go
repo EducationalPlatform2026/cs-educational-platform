@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"cs-educational-platform/backend/internal/auth"
 	"cs-educational-platform/backend/internal/db"
 )
 
@@ -25,13 +26,22 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// ── Public routes ────────────────────────────────────────────────────────
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Pool.Ping(r.Context()); err != nil {
 			http.Error(w, "database unreachable", http.StatusServiceUnavailable)
 			return
 		}
 		fmt.Fprintln(w, "ok")
 	})
+
+	mux.HandleFunc("POST /auth/register", auth.RegisterHandler)
+	mux.HandleFunc("POST /auth/login", auth.LoginHandler)
+
+	// ── Protected route example (requires valid JWT) ─────────────────────────
+	mux.Handle("GET /me", auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"user_id":%q,"role":%q}`, auth.UserIDFromCtx(r.Context()), auth.RoleFromCtx(r.Context()))
+	})))
 
 	srv := &http.Server{
 		Addr:         ":8080",
