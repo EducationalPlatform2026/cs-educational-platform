@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# Runtime logs
+*.log
+
 # Frontend
 frontend/node_modules/
 frontend/.svelte-kit/
