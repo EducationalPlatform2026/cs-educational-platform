@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"cs-educational-platform/backend/internal/auth"
+	"cs-educational-platform/backend/internal/courses"
 	"cs-educational-platform/backend/internal/db"
 	"cs-educational-platform/backend/internal/httputil"
 )
@@ -51,6 +53,39 @@ func main() {
 		})
 	})))
 
+	// Courses
+	mux.Handle("GET /courses", auth.Middleware(
+		http.HandlerFunc(courses.ListHandler),
+	))
+	mux.Handle("POST /courses", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(courses.CreateHandler),
+		),
+	))
+	mux.Handle("GET /courses/{id}", auth.Middleware(
+		http.HandlerFunc(courses.GetHandler),
+	))
+	mux.Handle("PUT /courses/{id}", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(courses.UpdateHandler),
+		),
+	))
+	mux.Handle("DELETE /courses/{id}", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(courses.DeleteHandler),
+		),
+	))
+	mux.Handle("POST /courses/{id}/enroll", auth.Middleware(
+		auth.RequireRole(auth.RoleStudent, auth.RoleTeachingAssistant)(
+			http.HandlerFunc(courses.EnrollHandler),
+		),
+	))
+	mux.Handle("GET /courses/{id}/members", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
+			http.HandlerFunc(courses.MembersHandler),
+		),
+	))
+
 	srv := &http.Server{
 		Addr:         ":8080",
 		Handler:      mux,
@@ -58,7 +93,7 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	go func() {
+git add backend/internal/courses/ backend/cmd/server/main.go	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
@@ -70,7 +105,7 @@ func main() {
 	}()
 
 	fmt.Println("Backend running on http://localhost:8080")
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}
