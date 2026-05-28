@@ -18,16 +18,14 @@ import (
 // courseFields is the shared SELECT / RETURNING column list for the courses table.
 const courseFields = `id, title, description, created_by, is_published, created_at, updated_at`
 
-// courseOwner returns the created_by UUID for the given course.
-// Returns pgx.ErrNoRows if the course does not exist.
+// courseOwner returns pgx.ErrNoRows if the course does not exist.
 func courseOwner(ctx context.Context, id string) (string, error) {
 	var owner string
 	err := db.Pool.QueryRow(ctx, `SELECT created_by FROM courses WHERE id = $1`, id).Scan(&owner)
 	return owner, err
 }
 
-// scanCourse fills a Course from the 7 standard columns using the provided Scan func.
-// Works with both pgx.Row.Scan and pgx.Rows.Scan.
+// scanCourse works with both pgx.Row.Scan and pgx.Rows.Scan.
 func scanCourse(c *Course, scan func(...any) error) error {
 	return scan(&c.ID, &c.Title, &c.Description, &c.CreatedBy, &c.IsPublished, &c.CreatedAt, &c.UpdatedAt)
 }
@@ -43,7 +41,7 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	if role != auth.RoleProfessor && role != auth.RoleAdmin {
 		query += ` WHERE is_published = true`
 	}
-	query += ` ORDER BY created_at DESC`
+	query += ` ORDER BY created_at DESC LIMIT 200`
 
 	rows, err := db.Pool.Query(r.Context(), query)
 	if err != nil {
@@ -82,13 +80,13 @@ func CreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var c Course
-	err := db.Pool.QueryRow(r.Context(),
+	row := db.Pool.QueryRow(r.Context(),
 		`INSERT INTO courses (title, description, created_by, is_published)
 		 VALUES ($1, $2, $3, $4)
 		 RETURNING `+courseFields,
 		req.Title, req.Description, auth.UserIDFromCtx(r.Context()), req.IsPublished,
-	).Scan(&c.ID, &c.Title, &c.Description, &c.CreatedBy, &c.IsPublished, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
+	)
+	if err := scanCourse(&c, row.Scan); err != nil {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -104,9 +102,9 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromCtx(r.Context())
 
 	var c Course
-	err := db.Pool.QueryRow(r.Context(),
+	err := scanCourse(&c, db.Pool.QueryRow(r.Context(),
 		`SELECT `+courseFields+` FROM courses WHERE id = $1`, id,
-	).Scan(&c.ID, &c.Title, &c.Description, &c.CreatedBy, &c.IsPublished, &c.CreatedAt, &c.UpdatedAt)
+	).Scan)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httputil.Error(w, "course not found", http.StatusNotFound)
 		return
@@ -155,7 +153,7 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var c Course
-	err = db.Pool.QueryRow(r.Context(),
+	row := db.Pool.QueryRow(r.Context(),
 		`UPDATE courses SET
 		     title        = COALESCE($1, title),
 		     description  = COALESCE($2, description),
@@ -163,8 +161,12 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 		 WHERE id = $4
 		 RETURNING `+courseFields,
 		req.Title, req.Description, req.IsPublished, id,
-	).Scan(&c.ID, &c.Title, &c.Description, &c.CreatedBy, &c.IsPublished, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
+	)
+	if err = scanCourse(&c, row.Scan); errors.Is(err, pgx.ErrNoRows) {
+		// Course was deleted between the ownership check and the UPDATE.
+		httputil.Error(w, "course not found", http.StatusNotFound)
+		return
+	} else if err != nil {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -237,7 +239,6 @@ func EnrollHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ON CONFLICT DO NOTHING makes this idempotent — re-enrolling is a no-op.
 	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO course_enrollments (user_id, course_id, role)
 		 VALUES ($1, $2, $3)
@@ -263,7 +264,8 @@ func MembersHandler(w http.ResponseWriter, r *http.Request) {
 		 LEFT JOIN course_enrollments ce ON ce.course_id = c.id
 		 LEFT JOIN users u ON u.id = ce.user_id
 		 WHERE c.id = $1
-		 ORDER BY ce.enrolled_at ASC NULLS LAST`,
+		 ORDER BY ce.enrolled_at ASC NULLS LAST
+		 LIMIT 500`,
 		courseID,
 	)
 	if err != nil {

@@ -93,7 +93,7 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-git add backend/internal/courses/ backend/cmd/server/main.go	go func() {
+	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
