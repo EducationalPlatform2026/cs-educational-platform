@@ -15,6 +15,7 @@ import (
 	"cs-educational-platform/backend/internal/auth"
 	"cs-educational-platform/backend/internal/courses"
 	"cs-educational-platform/backend/internal/db"
+	"cs-educational-platform/backend/internal/exercises"
 	"cs-educational-platform/backend/internal/httputil"
 )
 
@@ -88,6 +89,49 @@ func main() {
 	mux.Handle("GET /courses/{id}/members", auth.Middleware(
 		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
 			http.HandlerFunc(courses.MembersHandler),
+		),
+	))
+
+	// Exercises
+	mux.Handle("GET /courses/{id}/exercises", auth.Middleware(
+		http.HandlerFunc(exercises.ListHandler),
+	))
+	mux.Handle("POST /courses/{id}/exercises", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(exercises.CreateHandler),
+		),
+	))
+	mux.Handle("GET /exercises/{id}", auth.Middleware(
+		http.HandlerFunc(exercises.GetHandler),
+	))
+	mux.Handle("PUT /exercises/{id}", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(exercises.UpdateHandler),
+		),
+	))
+	mux.Handle("DELETE /exercises/{id}", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(exercises.DeleteHandler),
+		),
+	))
+
+	// Test cases
+	mux.Handle("GET /exercises/{id}/test-cases", auth.Middleware(
+		http.HandlerFunc(exercises.ListTestCasesHandler),
+	))
+	mux.Handle("POST /exercises/{id}/test-cases", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(exercises.CreateTestCaseHandler),
+		),
+	))
+	mux.Handle("PUT /test-cases/{id}", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(exercises.UpdateTestCaseHandler),
+		),
+	))
+	mux.Handle("DELETE /test-cases/{id}", auth.Middleware(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+			http.HandlerFunc(exercises.DeleteTestCaseHandler),
 		),
 	))
 
