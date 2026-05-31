@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"cs-educational-platform/backend/internal/auth"
 	"cs-educational-platform/backend/internal/courses"
 	"cs-educational-platform/backend/internal/db"
@@ -17,6 +19,9 @@ import (
 )
 
 func main() {
+	// Load .env if present (dev convenience — real env vars always take precedence).
+	_ = godotenv.Load("../.env")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -88,7 +93,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         ":8080",
-		Handler:      mux,
+		Handler:      httputil.CORS(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
