@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { getCourse, getCourseMembers, enrollCourse, type Course, type Member } from '$lib/api/courses';
+	import { listExercises, deleteExercise, type Exercise } from '$lib/api/exercises';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	// `id` is always present in this route — the `[id]` segment guarantees it.
@@ -10,10 +11,12 @@
 
 	let course = $state<Course | null>(null);
 	let members = $state<Member[]>([]);
+	let exList = $state<Exercise[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let enrolling = $state(false);
 	let enrolled = $state(false);
+	let deletingEx = $state<Record<string, boolean>>({});
 
 	const canManage = $derived(
 		auth.user?.role === 'professor' || auth.user?.role === 'admin'
@@ -29,18 +32,33 @@
 
 	onMount(async () => {
 		try {
-			const [c, m] = await Promise.all([
+			const [c, m, ex] = await Promise.all([
 				getCourse(id),
-				canSeeMembers ? getCourseMembers(id) : Promise.resolve([])
+				canSeeMembers ? getCourseMembers(id) : Promise.resolve([]),
+				listExercises(id)
 			]);
 			course = c;
 			members = m;
+			exList = ex;
 		} catch (err: unknown) {
 			error = err instanceof Error ? err.message : 'Failed to load course';
 		} finally {
 			loading = false;
 		}
 	});
+
+	async function handleDeleteExercise(exId: string, title: string) {
+		if (!confirm(`Delete exercise "${title}"?`)) return;
+		deletingEx = { ...deletingEx, [exId]: true };
+		try {
+			await deleteExercise(exId);
+			exList = exList.filter((e) => e.id !== exId);
+		} catch (err: unknown) {
+			alert(err instanceof Error ? err.message : 'Delete failed');
+		} finally {
+			deletingEx = { ...deletingEx, [exId]: false };
+		}
+	}
 
 	async function handleEnroll() {
 		enrolling = true;
@@ -109,6 +127,49 @@
 				<p>{course.description}</p>
 			</div>
 		{/if}
+
+		<!-- Exercises section -->
+		<section class="exercises-section">
+			<div class="section-header">
+				<h2>Exercises ({exList.length})</h2>
+				{#if canManage}
+					<a href="/courses/{id}/exercises/new" class="btn-sm">+ Add exercise</a>
+				{/if}
+			</div>
+
+			{#if exList.length === 0}
+				<p class="empty-text">
+					{canManage ? 'No exercises yet. Add the first one.' : 'No exercises available yet.'}
+				</p>
+			{:else}
+				<div class="exercise-list">
+					{#each exList as ex (ex.id)}
+						<div class="exercise-row">
+							<div class="ex-info">
+								<a href="/exercises/{ex.id}" class="ex-title">{ex.title}</a>
+								<div class="ex-badges">
+									<span class="badge diff-{ex.difficulty}">{ex.difficulty}</span>
+									<span class="badge lang">{ex.language}</span>
+									{#if !ex.is_published}
+										<span class="badge draft">draft</span>
+									{/if}
+								</div>
+							</div>
+							{#if canManage}
+								<div class="ex-actions">
+									<a href="/exercises/{ex.id}/edit" class="btn-xs btn-outline">Edit</a>
+									<button
+										class="btn-xs btn-danger"
+										onclick={() => handleDeleteExercise(ex.id, ex.title)}
+										disabled={deletingEx[ex.id]}
+									>Delete</button>
+								</div>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
 
 		{#if canSeeMembers}
 			<section class="members-section">
@@ -232,6 +293,126 @@
 		color: #374151;
 		line-height: 1.65;
 	}
+
+	.exercises-section {
+		margin-top: 2rem;
+	}
+
+	.section-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1rem;
+	}
+
+	.section-header h2 {
+		font-size: 1.1rem;
+		font-weight: 600;
+	}
+
+	.exercise-list {
+		border: 1px solid #e5e7eb;
+		border-radius: 10px;
+		overflow: hidden;
+	}
+
+	.exercise-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.85rem 1.1rem;
+		border-bottom: 1px solid #f3f4f6;
+		gap: 1rem;
+	}
+
+	.exercise-row:last-child {
+		border-bottom: none;
+	}
+
+	.exercise-row:hover {
+		background: #fafafa;
+	}
+
+	.ex-info {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		flex: 1;
+	}
+
+	.ex-title {
+		font-size: 0.925rem;
+		font-weight: 500;
+		color: #1a1a2e;
+	}
+
+	.ex-title:hover {
+		color: #4f46e5;
+	}
+
+	.ex-badges {
+		display: flex;
+		gap: 0.4rem;
+	}
+
+	.badge {
+		font-size: 0.7rem;
+		font-weight: 600;
+		padding: 2px 7px;
+		border-radius: 99px;
+		text-transform: capitalize;
+	}
+
+	.diff-easy   { background: #dcfce7; color: #166534; }
+	.diff-medium { background: #fef9c3; color: #a16207; }
+	.diff-hard   { background: #fee2e2; color: #b91c1c; }
+	.lang        { background: #e0e7ff; color: #3730a3; }
+	.draft       { background: #f3f4f6; color: #6b7280; }
+
+	.ex-actions {
+		display: flex;
+		gap: 0.4rem;
+		flex-shrink: 0;
+	}
+
+	.btn-xs {
+		font-size: 0.78rem;
+		font-weight: 600;
+		padding: 3px 9px;
+		border-radius: 5px;
+		border: none;
+		cursor: pointer;
+		transition: all 0.15s;
+		text-decoration: none;
+		display: inline-block;
+	}
+
+	.btn-sm {
+		background: #4f46e5;
+		color: #fff;
+		border: none;
+		border-radius: 7px;
+		padding: 5px 12px;
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+		text-decoration: none;
+	}
+
+	.btn-sm:hover { background: #4338ca; text-decoration: none; }
+
+	.btn-xs.btn-outline {
+		background: transparent;
+		color: #374151;
+		border: 1px solid #d1d5db;
+	}
+
+	.btn-xs.btn-outline:hover { background: #f9fafb; }
+
+	.btn-xs.btn-danger { background: #ef4444; color: #fff; }
+	.btn-xs.btn-danger:hover:not(:disabled) { background: #dc2626; }
+	.btn-xs:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	.members-section {
 		margin-top: 2rem;
