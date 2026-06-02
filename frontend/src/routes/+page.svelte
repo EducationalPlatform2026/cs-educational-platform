@@ -5,6 +5,6 @@
 
 	onMount(() => {
 		auth.init();
-		goto(auth.isLoggedIn ? '/courses' : '/auth/login', { replaceState: true });
+		goto(auth.isLoggedIn ? '/dashboard' : '/auth/login', { replaceState: true });
 	});
 </script>
