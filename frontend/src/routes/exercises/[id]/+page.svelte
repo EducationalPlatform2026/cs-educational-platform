@@ -4,6 +4,7 @@
 	import { getExercise, listTestCases, createTestCase, deleteTestCase, type Exercise, type AnyTestCase, type TestCase } from '$lib/api/exercises';
 	import { submitCode, listSubmissions, type Submission, type SubmissionStatus } from '$lib/api/submissions';
 	import { ApiError } from '$lib/api/client';
+	import { getStatusMeta } from '$lib/utils/submissionStatus';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const id = $derived($page.params.id as string);
@@ -126,19 +127,8 @@
 		}
 	}
 
-	const statusMeta: Record<SubmissionStatus, { label: string; cls: string }> = {
-		pending:       { label: 'Pending',        cls: 'status-pending'  },
-		running:       { label: 'Running…',       cls: 'status-running'  },
-		accepted:      { label: 'Accepted',        cls: 'status-accepted' },
-		wrong_answer:  { label: 'Wrong Answer',    cls: 'status-wrong'   },
-		runtime_error: { label: 'Runtime Error',   cls: 'status-error'   },
-		time_limit:    { label: 'Time Limit',      cls: 'status-error'   },
-		memory_limit:  { label: 'Memory Limit',    cls: 'status-error'   },
-		compile_error: { label: 'Compile Error',   cls: 'status-error'   }
-	};
-
-	function statusLabel(s: SubmissionStatus) { return statusMeta[s]?.label ?? s; }
-	function statusCls(s: SubmissionStatus)   { return statusMeta[s]?.cls  ?? ''; }
+	function statusLabel(s: SubmissionStatus) { return getStatusMeta(s).label; }
+	function statusCls(s: SubmissionStatus)   { return getStatusMeta(s).cls; }
 </script>
 
 <div class="page">

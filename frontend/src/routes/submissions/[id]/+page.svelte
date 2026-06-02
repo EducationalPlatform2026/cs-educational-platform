@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { getSubmission, type SubmissionDetail, type SubmissionStatus } from '$lib/api/submissions';
+	import { getStatusMeta } from '$lib/utils/submissionStatus';
 
 	const id = $derived($page.params.id as string);
 
@@ -9,20 +10,7 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	const statusMeta: Record<SubmissionStatus, { label: string; cls: string }> = {
-		pending:       { label: 'Pending',       cls: 'status-pending' },
-		running:       { label: 'Running',        cls: 'status-running' },
-		accepted:      { label: 'Accepted',       cls: 'status-accepted' },
-		wrong_answer:  { label: 'Wrong Answer',   cls: 'status-wrong' },
-		runtime_error: { label: 'Runtime Error',  cls: 'status-error' },
-		time_limit:    { label: 'Time Limit',     cls: 'status-error' },
-		memory_limit:  { label: 'Memory Limit',   cls: 'status-error' },
-		compile_error: { label: 'Compile Error',  cls: 'status-error' }
-	};
-
-	function statusInfo(s: SubmissionStatus) {
-		return statusMeta[s] ?? { label: s, cls: 'status-pending' };
-	}
+	const statusInfo = getStatusMeta;
 
 	function formatDate(iso: string) {
 		return new Date(iso).toLocaleString(undefined, {

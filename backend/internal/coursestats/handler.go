@@ -101,7 +101,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			if err := db.Pool.QueryRow(ctx,
 				`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2)`,
 				courseID, userID,
-			).Scan(&enrolled); err != nil || !enrolled {
+			).Scan(&enrolled); err != nil {
+				httputil.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			} else if !enrolled {
 				httputil.Error(w, "forbidden: not enrolled in this course", http.StatusForbidden)
 				return
 			}
