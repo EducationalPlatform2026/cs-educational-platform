@@ -17,6 +17,8 @@ import (
 	"cs-educational-platform/backend/internal/db"
 	"cs-educational-platform/backend/internal/exercises"
 	"cs-educational-platform/backend/internal/httputil"
+	"cs-educational-platform/backend/internal/sandbox"
+	"cs-educational-platform/backend/internal/submissions"
 )
 
 func main() {
@@ -36,6 +38,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Start the sandbox worker — evaluates pending submissions in the background.
+	sandbox.StartWorker(ctx)
 
 	mux := http.NewServeMux()
 
@@ -133,6 +138,17 @@ func main() {
 		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.DeleteTestCaseHandler),
 		),
+	))
+
+	// Submissions
+	mux.Handle("POST /exercises/{id}/submit", auth.Middleware(
+		http.HandlerFunc(submissions.SubmitHandler),
+	))
+	mux.Handle("GET /exercises/{id}/submissions", auth.Middleware(
+		http.HandlerFunc(submissions.ListHandler),
+	))
+	mux.Handle("GET /submissions/{id}", auth.Middleware(
+		http.HandlerFunc(submissions.GetHandler),
 	))
 
 	srv := &http.Server{

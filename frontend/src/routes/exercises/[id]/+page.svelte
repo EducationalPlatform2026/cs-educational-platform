@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { getExercise, listTestCases, createTestCase, deleteTestCase, type Exercise, type AnyTestCase, type TestCase } from '$lib/api/exercises';
+	import { submitCode, listSubmissions, type Submission, type SubmissionStatus } from '$lib/api/submissions';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const id = $derived($page.params.id as string);
@@ -28,12 +29,30 @@
 	let tcError = $state('');
 	let deletingTc = $state<Record<string, boolean>>({});
 
+	// Submission state
+	let code = $state('');
+	let submitLang = $state('');
+	let submitting = $state(false);
+	let submitError = $state('');
+	let latestSubmission = $state<Submission | null>(null);
+	let submissionHistory = $state<Submission[]>([]);
+	let showHistory = $state(false);
+
 	onMount(async () => {
 		try {
-			const [ex, tc] = await Promise.all([getExercise(id), listTestCases(id)]);
+			const [ex, tc, subs] = await Promise.all([
+				getExercise(id),
+				listTestCases(id),
+				listSubmissions(id)
+			]);
 			exercise = ex;
 			testCases = tc;
 			tcOrdinal = tc.length + 1;
+			submissionHistory = subs;
+			if (subs.length > 0) latestSubmission = subs[0];
+			// Pre-fill code editor with template or last submission
+			code = subs[0]?.code ?? ex.template_code ?? '';
+			submitLang = ex.language;
 		} catch (err: unknown) {
 			error = err instanceof Error ? err.message : 'Failed to load exercise';
 		} finally {
@@ -85,6 +104,35 @@
 	function isVisible(tc: AnyTestCase): tc is TestCase {
 		return !tc.is_hidden;
 	}
+
+	async function handleSubmit(e: SubmitEvent) {
+		e.preventDefault();
+		submitError = '';
+		submitting = true;
+		try {
+			const sub = await submitCode(id, code, submitLang);
+			latestSubmission = sub;
+			submissionHistory = [sub, ...submissionHistory];
+		} catch (err: unknown) {
+			submitError = err instanceof Error ? err.message : 'Submission failed';
+		} finally {
+			submitting = false;
+		}
+	}
+
+	const statusMeta: Record<SubmissionStatus, { label: string; cls: string }> = {
+		pending:       { label: 'Pending',        cls: 'status-pending'  },
+		running:       { label: 'Running…',       cls: 'status-running'  },
+		accepted:      { label: 'Accepted',        cls: 'status-accepted' },
+		wrong_answer:  { label: 'Wrong Answer',    cls: 'status-wrong'   },
+		runtime_error: { label: 'Runtime Error',   cls: 'status-error'   },
+		time_limit:    { label: 'Time Limit',      cls: 'status-error'   },
+		memory_limit:  { label: 'Memory Limit',    cls: 'status-error'   },
+		compile_error: { label: 'Compile Error',   cls: 'status-error'   }
+	};
+
+	function statusLabel(s: SubmissionStatus) { return statusMeta[s]?.label ?? s; }
+	function statusCls(s: SubmissionStatus)   { return statusMeta[s]?.cls  ?? ''; }
 </script>
 
 <div class="page">
@@ -227,6 +275,75 @@
 				</div>
 			{/if}
 		</div>
+		<!-- Submit solution -->
+		<div class="card">
+			<h2>Submit your solution</h2>
+
+			{#if submitError}
+				<div class="alert">{submitError}</div>
+			{/if}
+
+			{#if latestSubmission}
+				<div class="result-banner {statusCls(latestSubmission.status)}">
+					<span class="result-label">{statusLabel(latestSubmission.status)}</span>
+					{#if latestSubmission.status === 'accepted'}
+						<span class="result-score">{latestSubmission.score}%</span>
+					{/if}
+					{#if latestSubmission.stderr}
+						<pre class="result-stderr">{latestSubmission.stderr}</pre>
+					{/if}
+				</div>
+			{/if}
+
+			<form onsubmit={handleSubmit}>
+				<div class="submit-lang-row">
+					<label class="inline-label">
+						Language
+						<select bind:value={submitLang}>
+							{#each ['python','go','java','c','cpp','javascript'] as l}
+								<option value={l}>{l}</option>
+							{/each}
+						</select>
+					</label>
+				</div>
+				<textarea
+					bind:value={code}
+					rows="14"
+					placeholder="Write your solution here…"
+					class="code-editor"
+					spellcheck="false"
+				></textarea>
+				<div class="form-actions">
+					<button type="submit" class="btn-primary" disabled={submitting}>
+						{submitting ? 'Submitting…' : 'Submit'}
+					</button>
+				</div>
+			</form>
+		</div>
+
+		<!-- Submission history -->
+		{#if submissionHistory.length > 0}
+			<div class="card">
+				<button class="history-toggle" onclick={() => (showHistory = !showHistory)}>
+					Submission history ({submissionHistory.length})
+					<span>{showHistory ? '▲' : '▼'}</span>
+				</button>
+
+				{#if showHistory}
+					<div class="history-list">
+						{#each submissionHistory as sub (sub.id)}
+							<div class="history-row">
+								<span class="history-badge {statusCls(sub.status)}">{statusLabel(sub.status)}</span>
+								<span class="history-lang">{sub.language}</span>
+								<span class="history-date">
+									{new Date(sub.submitted_at).toLocaleString()}
+								</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -469,6 +586,111 @@
 		cursor: pointer;
 	}
 	.btn-sm:hover { background: #4338ca; }
+
+	/* ── Submission ── */
+	.result-banner {
+		border-radius: 8px;
+		padding: 0.75rem 1rem;
+		margin-bottom: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+	.result-label { font-weight: 700; font-size: 0.95rem; }
+	.result-score { font-size: 0.9rem; opacity: 0.85; }
+	.result-stderr {
+		width: 100%;
+		margin: 0;
+		font-size: 0.8rem;
+		font-family: monospace;
+		white-space: pre-wrap;
+		word-break: break-all;
+		opacity: 0.9;
+	}
+
+	.status-pending  { background: #f3f4f6; color: #374151; }
+	.status-running  { background: #eff6ff; color: #1d4ed8; }
+	.status-accepted { background: #dcfce7; color: #166534; }
+	.status-wrong    { background: #fef9c3; color: #a16207; }
+	.status-error    { background: #fee2e2; color: #b91c1c; }
+
+	.submit-lang-row { margin-bottom: 0.75rem; }
+
+	.inline-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: #374151;
+	}
+
+	.inline-label select {
+		padding: 0.35rem 0.65rem;
+		border: 1px solid #d1d5db;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		outline: none;
+		background: #fff;
+	}
+
+	.code-editor {
+		width: 100%;
+		padding: 0.75rem 1rem;
+		border: 1px solid #d1d5db;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+		line-height: 1.6;
+		resize: vertical;
+		outline: none;
+		background: #1e1e2e;
+		color: #cdd6f4;
+		transition: border-color 0.15s;
+	}
+	.code-editor:focus { border-color: #4f46e5; }
+
+	.history-toggle {
+		background: none;
+		border: none;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: #374151;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		padding: 0;
+	}
+	.history-toggle:hover { color: #4f46e5; }
+
+	.history-list {
+		margin-top: 0.85rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.history-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0;
+		border-bottom: 1px solid #f3f4f6;
+		font-size: 0.875rem;
+	}
+	.history-row:last-child { border-bottom: none; }
+
+	.history-badge {
+		font-size: 0.75rem;
+		font-weight: 700;
+		padding: 2px 8px;
+		border-radius: 99px;
+	}
+	.history-lang { color: #6b7280; font-size: 0.82rem; }
+	.history-date { color: #9ca3af; font-size: 0.8rem; margin-left: auto; }
 
 	.btn-outline {
 		background: transparent;
