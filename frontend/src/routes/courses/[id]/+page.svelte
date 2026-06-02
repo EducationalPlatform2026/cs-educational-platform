@@ -38,6 +38,7 @@
 				listExercises(id)
 			]);
 			course = c;
+			enrolled = c.is_enrolled; // restore persisted enrollment state on every load
 			members = m;
 			exList = ex;
 		} catch (err: unknown) {

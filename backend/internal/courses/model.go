@@ -2,7 +2,7 @@ package courses
 
 import "time"
 
-// Course mirrors the courses table.
+// Course mirrors the courses table plus the caller-specific is_enrolled flag.
 type Course struct {
 	ID          string    `json:"id"`
 	Title       string    `json:"title"`
@@ -11,6 +11,7 @@ type Course struct {
 	IsPublished bool      `json:"is_published"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	IsEnrolled  bool      `json:"is_enrolled"` // true if the requesting user is enrolled
 }
 
 // Member represents a user enrolled in a course.
