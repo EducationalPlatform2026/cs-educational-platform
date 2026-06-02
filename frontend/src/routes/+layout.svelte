@@ -28,6 +28,7 @@
 			<a href="/" class="brand">CS Platform</a>
 			{#if auth.isLoggedIn}
 				<div class="nav-links">
+					<a href="/dashboard">Dashboard</a>
 					<a href="/courses">Courses</a>
 				</div>
 				<div class="nav-user">
