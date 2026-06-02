@@ -14,6 +14,7 @@ import (
 
 	"cs-educational-platform/backend/internal/auth"
 	"cs-educational-platform/backend/internal/courses"
+	"cs-educational-platform/backend/internal/coursestats"
 	"cs-educational-platform/backend/internal/dashboard"
 	"cs-educational-platform/backend/internal/db"
 	"cs-educational-platform/backend/internal/exercises"
@@ -139,6 +140,11 @@ func main() {
 		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.DeleteTestCaseHandler),
 		),
+	))
+
+	// Course statistics report
+	mux.Handle("GET /courses/{id}/stats", auth.Middleware(
+		http.HandlerFunc(coursestats.Handler),
 	))
 
 	// Dashboard

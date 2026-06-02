@@ -117,6 +117,9 @@
 						</button>
 					{/if}
 				{/if}
+				{#if canSeeMembers}
+					<a href="/courses/{course.id}/stats" class="btn-outline">📊 Report</a>
+				{/if}
 				{#if canManage}
 					<a href="/courses/{course.id}/edit" class="btn-outline">Edit course</a>
 				{/if}
