@@ -18,10 +18,12 @@
 	// Per-card action state
 	let actionState = $state<Record<string, string>>({}); // courseId → 'enrolling' | 'deleting' | 'done'
 
-	const canManage =
-		auth.user?.role === 'professor' || auth.user?.role === 'admin';
-	const canEnroll =
-		auth.user?.role === 'student' || auth.user?.role === 'teaching_assistant';
+	const canManage = $derived(
+		auth.user?.role === 'professor' || auth.user?.role === 'admin'
+	);
+	const canEnroll = $derived(
+		auth.user?.role === 'student' || auth.user?.role === 'teaching_assistant'
+	);
 
 	onMount(async () => {
 		await load();

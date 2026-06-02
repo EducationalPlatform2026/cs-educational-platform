@@ -12,6 +12,11 @@ import (
 	"cs-educational-platform/backend/internal/httputil"
 )
 
+// submissionPrivileged reports whether this role can see all submissions (not just their own).
+func submissionPrivileged(role string) bool {
+	return role == auth.RoleProfessor || role == auth.RoleAdmin || role == auth.RoleTeachingAssistant
+}
+
 const submissionFields = `id, exercise_id, user_id, code, language, status, score, stderr, submitted_at`
 
 func scanSubmission(s *Submission, scan func(...any) error) error {
@@ -94,26 +99,42 @@ func SubmitHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListHandler GET /exercises/{id}/submissions  [any authenticated user]
-// Students see only their own submissions; professors/admins/TAs see all.
+// Students and TAs must be enrolled; students see only their own submissions.
 func ListHandler(w http.ResponseWriter, r *http.Request) {
 	exerciseID := r.PathValue("id")
 	userID := auth.UserIDFromCtx(r.Context())
 	role := auth.RoleFromCtx(r.Context())
 
-	// Verify the exercise exists.
-	var exists bool
+	// Verify the exercise exists and fetch course_id for enrollment check.
+	var courseID string
 	if err := db.Pool.QueryRow(r.Context(),
-		`SELECT EXISTS(SELECT 1 FROM exercises WHERE id = $1)`, exerciseID,
-	).Scan(&exists); err != nil {
+		`SELECT course_id FROM exercises WHERE id = $1`, exerciseID,
+	).Scan(&courseID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			httputil.Error(w, "exercise not found", http.StatusNotFound)
+			return
+		}
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	if !exists {
-		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
 	}
 
 	privileged := role == auth.RoleProfessor || role == auth.RoleAdmin || role == auth.RoleTeachingAssistant
+
+	// Students and TAs must be enrolled in the course to view submissions.
+	if !privileged {
+		var enrolled bool
+		if err := db.Pool.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2)`,
+			courseID, userID,
+		).Scan(&enrolled); err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !enrolled {
+			httputil.Error(w, "you must be enrolled in this course to view submissions", http.StatusForbidden)
+			return
+		}
+	}
 
 	var (
 		rows interface {

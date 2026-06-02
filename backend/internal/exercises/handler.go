@@ -125,6 +125,20 @@ func CreateHandler(w http.ResponseWriter, r *http.Request) {
 	courseID := r.PathValue("id")
 	userID := auth.UserIDFromCtx(r.Context())
 
+	// Verify the course exists before attempting the INSERT so the caller
+	// gets a 404 instead of an opaque 500 FK-violation error.
+	var courseExists bool
+	if err := db.Pool.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM courses WHERE id = $1)`, courseID,
+	).Scan(&courseExists); err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !courseExists {
+		httputil.Error(w, "course not found", http.StatusNotFound)
+		return
+	}
+
 	var req createExerciseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httputil.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -302,21 +316,36 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 // ListTestCasesHandler GET /exercises/{id}/test-cases
 // Students receive hidden test cases with input/expected_output stripped.
+// Students and TAs must be enrolled in the exercise's course.
 func ListTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 	exerciseID := r.PathValue("id")
 	role := auth.RoleFromCtx(r.Context())
+	userID := auth.UserIDFromCtx(r.Context())
 
-	// Verify exercise exists.
-	var exists bool
+	// Fetch exercise to confirm it exists and to get course_id for enrollment check.
+	var courseID string
 	if err := db.Pool.QueryRow(r.Context(),
-		`SELECT EXISTS(SELECT 1 FROM exercises WHERE id = $1)`, exerciseID,
-	).Scan(&exists); err != nil {
+		`SELECT course_id FROM exercises WHERE id = $1`, exerciseID,
+	).Scan(&courseID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			httputil.Error(w, "exercise not found", http.StatusNotFound)
+			return
+		}
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	if !exists {
-		httputil.Error(w, "exercise not found", http.StatusNotFound)
-		return
+
+	// Students and TAs must be enrolled in the course.
+	if requiresEnrollment(role) {
+		enrolled, err := isEnrolled(r.Context(), courseID, userID)
+		if err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !enrolled {
+			httputil.Error(w, "you must be enrolled in this course to view test cases", http.StatusForbidden)
+			return
+		}
 	}
 
 	rows, err := db.Pool.Query(r.Context(),
