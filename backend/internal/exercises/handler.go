@@ -38,13 +38,31 @@ func canManageExercise(role string) bool {
 	return role == auth.RoleProfessor || role == auth.RoleAdmin
 }
 
+// requiresEnrollment reports whether this role must be enrolled to access exercises.
+// Professors and admins always have full access regardless of enrollment.
+func requiresEnrollment(role string) bool {
+	return role == auth.RoleStudent || role == auth.RoleTeachingAssistant
+}
+
+// isEnrolled checks whether userID is enrolled in courseID.
+func isEnrolled(ctx context.Context, courseID, userID string) (bool, error) {
+	var enrolled bool
+	err := db.Pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2)`,
+		courseID, userID,
+	).Scan(&enrolled)
+	return enrolled, err
+}
+
 // ── Exercise handlers ────────────────────────────────────────────────────────
 
 // ListHandler GET /courses/{id}/exercises
 // Professors and admins see all; others only see published.
+// Students and TAs must be enrolled in the course — otherwise 403.
 func ListHandler(w http.ResponseWriter, r *http.Request) {
 	courseID := r.PathValue("id")
 	role := auth.RoleFromCtx(r.Context())
+	userID := auth.UserIDFromCtx(r.Context())
 
 	// Verify the course exists first.
 	var exists bool
@@ -57,6 +75,19 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		httputil.Error(w, "course not found", http.StatusNotFound)
 		return
+	}
+
+	// Students and TAs must be enrolled to browse exercises.
+	if requiresEnrollment(role) {
+		enrolled, err := isEnrolled(r.Context(), courseID, userID)
+		if err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !enrolled {
+			httputil.Error(w, "you must be enrolled in this course to view its exercises", http.StatusForbidden)
+			return
+		}
 	}
 
 	query := `SELECT ` + exerciseFields + ` FROM exercises WHERE course_id = $1`
@@ -167,6 +198,19 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 	if !e.IsPublished && !canSeeUnpublished {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
+	}
+
+	// Students and TAs must be enrolled in the exercise's course.
+	if requiresEnrollment(role) {
+		enrolled, err := isEnrolled(r.Context(), e.CourseID, userID)
+		if err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !enrolled {
+			httputil.Error(w, "you must be enrolled in this course to view this exercise", http.StatusForbidden)
+			return
+		}
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, e)

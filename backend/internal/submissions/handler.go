@@ -39,11 +39,12 @@ func SubmitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the exercise exists and is published (students cannot submit to drafts).
+	// Verify the exercise exists and fetch its course_id + published flag.
 	var isPublished bool
+	var courseID string
 	err := db.Pool.QueryRow(r.Context(),
-		`SELECT is_published FROM exercises WHERE id = $1`, exerciseID,
-	).Scan(&isPublished)
+		`SELECT is_published, course_id FROM exercises WHERE id = $1`, exerciseID,
+	).Scan(&isPublished, &courseID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
@@ -54,10 +55,27 @@ func SubmitHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	role := auth.RoleFromCtx(r.Context())
-	canBypassPublished := role == auth.RoleProfessor || role == auth.RoleAdmin
-	if !isPublished && !canBypassPublished {
+	privileged := role == auth.RoleProfessor || role == auth.RoleAdmin
+
+	if !isPublished && !privileged {
 		httputil.Error(w, "exercise is not available for submission", http.StatusForbidden)
 		return
+	}
+
+	// Students and TAs must be enrolled to submit.
+	if !privileged {
+		var enrolled bool
+		if err := db.Pool.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2)`,
+			courseID, userID,
+		).Scan(&enrolled); err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !enrolled {
+			httputil.Error(w, "you must be enrolled in this course to submit", http.StatusForbidden)
+			return
+		}
 	}
 
 	var s Submission

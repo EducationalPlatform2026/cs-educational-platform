@@ -132,13 +132,27 @@
 		<!-- Exercises section -->
 		<section class="exercises-section">
 			<div class="section-header">
-				<h2>Exercises ({exList.length})</h2>
+				<h2>Exercises {#if canManage || enrolled}({exList.length}){/if}</h2>
 				{#if canManage}
 					<a href="/courses/{id}/exercises/new" class="btn-sm">+ Add exercise</a>
 				{/if}
 			</div>
 
-			{#if exList.length === 0}
+			{#if !canManage && !enrolled && canEnroll}
+				<!-- Student/TA not enrolled — show enroll gate -->
+				<div class="enroll-gate">
+					<div class="gate-icon">🔒</div>
+					<p class="gate-title">Enroll to access exercises</p>
+					<p class="gate-sub">
+						You need to be enrolled in this course to view and solve its exercises.
+					</p>
+					{#if course.is_published}
+						<button class="btn-primary" onclick={handleEnroll} disabled={enrolling}>
+							{enrolling ? 'Enrolling…' : 'Enroll now'}
+						</button>
+					{/if}
+				</div>
+			{:else if exList.length === 0}
 				<p class="empty-text">
 					{canManage ? 'No exercises yet. Add the first one.' : 'No exercises available yet.'}
 				</p>
@@ -428,6 +442,35 @@
 	.empty-text {
 		color: #6b7280;
 		font-size: 0.9rem;
+	}
+
+	.enroll-gate {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 2.5rem 1.5rem;
+		border: 2px dashed #e5e7eb;
+		border-radius: 12px;
+		text-align: center;
+		background: #fafafa;
+	}
+
+	.gate-icon {
+		font-size: 2rem;
+		line-height: 1;
+	}
+
+	.gate-title {
+		font-size: 1rem;
+		font-weight: 600;
+		color: #374151;
+	}
+
+	.gate-sub {
+		font-size: 0.875rem;
+		color: #6b7280;
+		max-width: 360px;
 	}
 
 	.members-table-wrap {
