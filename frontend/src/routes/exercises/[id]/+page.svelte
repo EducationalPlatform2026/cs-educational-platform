@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { getExercise, listTestCases, createTestCase, deleteTestCase, type Exercise, type AnyTestCase, type TestCase } from '$lib/api/exercises';
 	import { submitCode, listSubmissions, type Submission, type SubmissionStatus } from '$lib/api/submissions';
+	import { ApiError } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const id = $derived($page.params.id as string);
@@ -11,6 +12,7 @@
 	let testCases = $state<AnyTestCase[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	let notEnrolled = $state(false); // true when backend returns 403 for this exercise
 
 	const canManage = $derived(auth.user?.role === 'professor' || auth.user?.role === 'admin');
 	const canSeeAll = $derived(
@@ -54,7 +56,11 @@
 			code = subs[0]?.code ?? ex.template_code ?? '';
 			submitLang = ex.language;
 		} catch (err: unknown) {
-			error = err instanceof Error ? err.message : 'Failed to load exercise';
+			if (err instanceof ApiError && err.status === 403) {
+				notEnrolled = true;
+			} else {
+				error = err instanceof Error ? err.message : 'Failed to load exercise';
+			}
 		} finally {
 			loading = false;
 		}
@@ -140,6 +146,16 @@
 
 	{#if loading}
 		<div class="skeleton"></div>
+
+	{:else if notEnrolled}
+		<div class="enroll-gate">
+			<div class="gate-icon">🔒</div>
+			<p class="gate-title">Enrollment required</p>
+			<p class="gate-sub">
+				You need to be enrolled in this course to view and solve its exercises.
+			</p>
+			<a href="/courses" class="btn-primary">Browse courses</a>
+		</div>
 
 	{:else if error}
 		<div class="alert">{error}</div>
@@ -368,6 +384,33 @@
 	@keyframes shimmer {
 		0% { background-position: 200% 0; }
 		100% { background-position: -200% 0; }
+	}
+
+	.enroll-gate {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 3.5rem 2rem;
+		border: 2px dashed #e5e7eb;
+		border-radius: 12px;
+		text-align: center;
+		background: #fafafa;
+		margin-top: 1rem;
+	}
+
+	.gate-icon { font-size: 2.5rem; line-height: 1; }
+
+	.gate-title {
+		font-size: 1.1rem;
+		font-weight: 600;
+		color: #374151;
+	}
+
+	.gate-sub {
+		font-size: 0.875rem;
+		color: #6b7280;
+		max-width: 380px;
 	}
 
 	.alert {
