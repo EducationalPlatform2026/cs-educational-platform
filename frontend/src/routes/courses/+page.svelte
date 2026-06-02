@@ -175,7 +175,7 @@
 						</span>
 						<div class="card-actions">
 							{#if canEnroll}
-								{#if actionState[course.id] === 'done'}
+								{#if course.is_enrolled || actionState[course.id] === 'done'}
 									<span class="enrolled-badge">✓ Enrolled</span>
 								{:else}
 									<button

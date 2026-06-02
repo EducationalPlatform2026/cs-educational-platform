@@ -6,6 +6,7 @@ export interface Course {
 	description?: string;
 	created_by: string;
 	is_published: boolean;
+	is_enrolled: boolean;
 	created_at: string;
 	updated_at: string;
 }

@@ -26,24 +26,37 @@ func courseOwner(ctx context.Context, id string) (string, error) {
 }
 
 // scanCourse works with both pgx.Row.Scan and pgx.Rows.Scan.
+// Used by CreateHandler and UpdateHandler (RETURNING courseFields — no is_enrolled column).
 func scanCourse(c *Course, scan func(...any) error) error {
 	return scan(&c.ID, &c.Title, &c.Description, &c.CreatedBy, &c.IsPublished, &c.CreatedAt, &c.UpdatedAt)
+}
+
+// scanCourseWithEnrollment scans courseFields + the trailing is_enrolled boolean.
+// Used by ListHandler and GetHandler which append the EXISTS subquery.
+func scanCourseWithEnrollment(c *Course, scan func(...any) error) error {
+	return scan(&c.ID, &c.Title, &c.Description, &c.CreatedBy, &c.IsPublished, &c.CreatedAt, &c.UpdatedAt,
+		&c.IsEnrolled)
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
 // ListHandler GET /courses
 // Professors and admins see all courses; others see only published ones.
+// The is_enrolled flag reflects whether the requesting user is enrolled in each course.
 func ListHandler(w http.ResponseWriter, r *http.Request) {
 	role := auth.RoleFromCtx(r.Context())
+	userID := auth.UserIDFromCtx(r.Context())
 
-	query := `SELECT ` + courseFields + ` FROM courses`
+	// Use table alias `c` so the EXISTS subquery can reference it unambiguously.
+	query := `SELECT ` + courseFields + `,
+		EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = c.id AND user_id = $1) AS is_enrolled
+		FROM courses c`
 	if role != auth.RoleProfessor && role != auth.RoleAdmin {
-		query += ` WHERE is_published = true`
+		query += ` WHERE c.is_published = true`
 	}
-	query += ` ORDER BY created_at DESC LIMIT 200`
+	query += ` ORDER BY c.created_at DESC LIMIT 200`
 
-	rows, err := db.Pool.Query(r.Context(), query)
+	rows, err := db.Pool.Query(r.Context(), query, userID)
 	if err != nil {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -53,7 +66,7 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	result := make([]Course, 0)
 	for rows.Next() {
 		var c Course
-		if err := scanCourse(&c, rows.Scan); err != nil {
+		if err := scanCourseWithEnrollment(&c, rows.Scan); err != nil {
 			httputil.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -121,6 +134,13 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, "course not found", http.StatusNotFound)
 		return
 	}
+
+	// Populate is_enrolled for the requesting user.
+	// Ignore any error — worst case the flag stays false.
+	_ = db.Pool.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2)`,
+		id, userID,
+	).Scan(&c.IsEnrolled)
 
 	httputil.WriteJSON(w, http.StatusOK, c)
 }
