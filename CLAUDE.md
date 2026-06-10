@@ -23,6 +23,7 @@ CS Educational Platform — a web app for managing CS courses, programming exerc
 
 ### In progress (current branch: `feat/submissions`)
 
+<<<<<<< Updated upstream
 **Status: code complete, smoke-tested, NOT YET COMMITTED**
 
 Files changed vs `main`:
@@ -40,6 +41,12 @@ git commit -m "feat: add code submission endpoints and submission UI on exercise
 git push origin feat/submissions
 ```
 Then open a PR on GitHub (`feat/submissions → main`) and merge it.
+=======
+| Branch | Status |
+|---|---|
+| `fix/security-vulnerabilities` | **Open — see Security section below** |
+| `feat/gamified-frontend` | **Local (uncommitted)** — full gamified UI: XP bars, streaks, learning path nodes, role-adaptive dashboard, split-pane exercise editor |
+>>>>>>> Stashed changes
 
 ### Upcoming features (in rough priority order)
 
@@ -79,26 +86,41 @@ frontend/             SvelteKit 2 + Svelte 5 + TypeScript (port 5173 dev)
         submissions.ts submitCode, listSubmissions, getSubmission
       components/
         ExerciseForm.svelte   Reusable create/edit exercise form
+        DifficultyDot.svelte  Colored dot for easy/medium/hard difficulty
+        XpBar.svelte          Level + XP progress bar (reads userStore)
+        StatChip.svelte       Colored stat card with icon (enrolled/solved/etc.)
+        ProgressRing.svelte   SVG circular progress ring with label
+        LearningPathNode.svelte  done/current/locked exercise node with pulse animation
       stores/
         auth.svelte.ts        Svelte 5 $state auth singleton (localStorage-backed)
+        userStore.svelte.ts   Gamification store — XP, streak, level, solvedExercises
+                              Persisted to localStorage key `cp_gamification`
+                              Level = floor(xp/500)+1; 100 XP per easy/medium, 200 XP hard
     routes/           File-based SvelteKit routing
       +layout.ts      export const ssr = false (pure SPA)
-      +layout.svelte  App shell: sticky nav, auth guard, logout
-      +page.svelte    Root redirect → /courses or /auth/login
+      +layout.svelte  App shell: nav with XP chip + streak badge + avatar, auth guard
+      +page.svelte    Root redirect → /dashboard or /auth/login
       auth/
         login/        Login form
         register/     Register form (student / TA / professor role selector)
+      dashboard/
+        +page.svelte  Role-adaptive: student (XP bar + stats + learning path preview)
+                      vs professor (course management) vs admin/TA
       courses/
-        +page.svelte              Course grid; create/enroll/delete per role
+        +page.svelte              Course grid with colored strips, filter tabs (All/Enrolled/Available)
         [id]/
-          +page.svelte            Course detail + members table + exercises list
+          +page.svelte            Course hero + progress ring + learning path nodes + members table
           exercises/new/
             +page.svelte          Create exercise (professor/admin only)
       exercises/
         [id]/
-          +page.svelte            Exercise detail + test cases + submission panel
+          +page.svelte            Split-pane: description left, dark code editor right
+                                  Submit+poll flow, XP float animation, test dot grid
           edit/
             +page.svelte          Edit exercise (professor/admin only)
+      sandbox/
+        +page.svelte  Split-pane scratchpad: notes left, dark code editor right
+                      Language starters, localStorage persistence, no backend needed
 infra/migrations/     Numbered SQL migration files (applied by Docker on first start)
 sandbox/              Code execution engine (not yet implemented)
 docker-compose.yml    PostgreSQL 16-alpine; auto-applies migrations on first start
