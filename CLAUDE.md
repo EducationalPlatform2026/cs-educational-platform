@@ -20,42 +20,26 @@ CS Educational Platform — a web app for managing CS courses, programming exerc
 | `feat/frontend-auth` | #37 | SvelteKit SPA, auth pages, courses UI, CORS middleware |
 | `feat/exercise-api` | #38 | Exercise CRUD + test case management endpoints |
 | `feat/frontend-exercises` | #39 | Exercises list/detail/create/edit UI in frontend |
+| `feat/submissions` | #40 | Submission store + retrieval handlers + submission UI |
+| `feat/sandbox` | #41 | Goroutine sandbox worker + cross-platform executor |
+| `feat/enrollment-gate` | #42 | Enrollment enforcement for exercises, test cases, submissions |
+| `feat/dashboard` | #43 | Student dashboard (stat cards + recent submissions) |
+| `feat/course-stats` | #44 | Professor course report (staff, student roster, solve rates) |
+| `fix/code-review-bugs` | #44 | 8 code-review findings fixed (DB errors, enrollment logic, etc.) |
+| `feat/gamified-frontend` | #45 | Gamified UI: XP bars, streaks, learning path nodes, role-adaptive dashboard, split-pane exercise editor |
 
-### In progress (current branch: `feat/submissions`)
+### In progress
 
-<<<<<<< Updated upstream
-**Status: code complete, smoke-tested, NOT YET COMMITTED**
-
-Files changed vs `main`:
-- `backend/internal/submissions/model.go` — NEW
-- `backend/internal/submissions/handler.go` — NEW (SubmitHandler, ListHandler, GetHandler)
-- `backend/cmd/server/main.go` — 3 new submission routes registered
-- `frontend/src/lib/api/submissions.ts` — NEW (submitCode, listSubmissions, getSubmission)
-- `frontend/src/routes/exercises/[id]/+page.svelte` — added submission panel (code editor, result banner, history)
-
-**To commit and push:**
-```powershell
-cd D:\Proiect_Colectiv2026\cs-educational-platform
-git add backend/internal/submissions/ backend/cmd/server/main.go frontend/src/lib/api/submissions.ts frontend/src/routes/exercises/[id]/+page.svelte
-git commit -m "feat: add code submission endpoints and submission UI on exercise page"
-git push origin feat/submissions
-```
-Then open a PR on GitHub (`feat/submissions → main`) and merge it.
-=======
 | Branch | Status |
 |---|---|
-| `fix/security-vulnerabilities` | **Open — see Security section below** |
-| `feat/gamified-frontend` | **Local (uncommitted)** — full gamified UI: XP bars, streaks, learning path nodes, role-adaptive dashboard, split-pane exercise editor |
->>>>>>> Stashed changes
+| `fix/security-vulnerabilities` | **Open PR — see Security section below** |
 
 ### Upcoming features (in rough priority order)
 
 | Branch (suggested) | Feature | Description |
 |---|---|---|
-| `feat/sandbox` | **Code execution engine** | Pick up `pending` submissions, run code in isolated Docker container, compare output against test cases, update status (`accepted` / `wrong_answer` / `runtime_error` / etc.) and per-test `submission_results` rows. This is the core value-add of the platform. |
-| `feat/dashboard` | Student dashboard | Personal stats: submissions count, acceptance rate, exercises attempted, recent activity. |
 | `feat/leaderboard` | Course leaderboard | Rank students in a course by score / accepted exercises. |
-| `feat/notifications` | Real-time status updates | Poll or SSE so the submission result banner auto-refreshes when sandbox finishes (instead of showing "pending" forever). |
+| `feat/notifications` | Real-time status updates | Poll or SSE so the submission result banner auto-refreshes when sandbox finishes. |
 | `feat/plagiarism` | Similarity check | Flag suspicious submissions within a course. |
 | `feat/admin-panel` | Admin management UI | User list, role changes, course overview. |
 
@@ -127,6 +111,40 @@ docker-compose.yml    PostgreSQL 16-alpine; auto-applies migrations on first sta
 .env                  Local secrets — never committed (see .env.example)
 CLAUDE.md             This file
 ```
+
+---
+
+## Security
+
+### Fixed vulnerabilities (`fix/security-vulnerabilities`)
+
+| Severity | File | What was fixed |
+|---|---|---|
+| **Critical** | `auth/handler.go` | Role whitelist on register — only `student`, `teaching_assistant`, `professor` allowed; `admin` is rejected. Previously any caller could self-assign `admin`. |
+| **High** | `httputil/cors.go` | CORS origin allowlist — only origins listed in `CORS_ORIGIN` env var (default `http://localhost:5173`) receive CORS headers. Previously any `Origin` header was reflected back with `Allow-Credentials: true`. |
+| **High** | `exercises/handler.go` | IDOR on test cases — `CreateTestCaseHandler`, `UpdateTestCaseHandler`, `DeleteTestCaseHandler` now verify the caller owns the parent exercise before mutating. Previously any professor could corrupt another professor's test cases. |
+| **High** | `exercises/handler.go` | Course ownership check on exercise creation — `CreateHandler` now verifies the calling professor owns the course. Previously any professor could inject exercises into any course. |
+| **Medium** | `submissions/handler.go` | Submission body size capped at `512 KB` via `http.MaxBytesReader`. Previously unbounded payloads could exhaust server and DB resources. |
+| **Medium** | `sandbox/executor.go` | `timeLimitMs` ceiling of 15 000 ms — prevents exercise records with an extreme or zero value from creating infinite or zero-duration timeouts. |
+| **Medium** | `sandbox/executor.go` | Temp source files created with mode `0600` (owner-only). Previously `0644` allowed other OS users to read other students' submitted code from `/tmp`. |
+| **Low** | `.env.example` | Added `CORS_ORIGIN` variable and strengthened the JWT_SECRET guidance with a generation command. |
+
+### Remaining / won't-fix at application layer
+
+| Issue | Reason |
+|---|---|
+| Sandbox process/network/memory isolation | Requires Docker-in-Docker, seccomp profiles, or a VM per submission — not addressable in Go application code. |
+| JWT stored in `localStorage` (XSS risk) | Migrating to `httpOnly` cookies requires a full auth refactor; acceptable risk for current threat model. |
+| No rate limiting on auth endpoints | Requires a middleware package (e.g. `golang.org/x/time/rate`) — planned for `feat/rate-limiting`. |
+| No token revocation on role change | Requires a token blocklist (Redis) — planned with session management feature. |
+
+### Adding a new endpoint — security checklist
+
+1. Is it behind `auth.Middleware`? (all non-public routes must be)
+2. Does it call `auth.RequireRole` if only certain roles should access it?
+3. If it mutates a resource owned by a specific user, does it verify `owner == userID || role == admin`?
+4. Does it call `http.MaxBytesReader` before decoding a request body with user-supplied text?
+5. Are all DB queries using parameterized `$1`-style placeholders (never string concatenation)?
 
 ---
 
