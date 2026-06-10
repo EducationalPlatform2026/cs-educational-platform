@@ -49,6 +49,9 @@ func RunAll(ctx context.Context, language, code string, timeLimitMs int, tests [
 	if timeLimitMs <= 0 {
 		timeLimitMs = 5000
 	}
+	if timeLimitMs > 15000 {
+		timeLimitMs = 15000
+	}
 	timeout := time.Duration(timeLimitMs) * time.Millisecond
 
 	out := make([]TestOutput, 0, len(tests))
@@ -202,7 +205,7 @@ func compile(ctx context.Context, dir string, name string, args ...string) (stri
 }
 
 func writeFile(dir, name, content string) error {
-	return os.WriteFile(filepath.Join(dir, name), []byte(content), 0644)
+	return os.WriteFile(filepath.Join(dir, name), []byte(content), 0600)
 }
 
 func pythonCmd(file string) []string {

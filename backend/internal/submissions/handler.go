@@ -24,12 +24,16 @@ func scanSubmission(s *Submission, scan func(...any) error) error {
 		&s.Status, &s.Score, &s.Stderr, &s.SubmittedAt)
 }
 
+// maxCodeBytes is the maximum accepted submission body size (512 KB).
+const maxCodeBytes = 512 * 1024
+
 // SubmitHandler POST /exercises/{id}/submit  [any authenticated user]
 // Stores the submission as pending. The sandbox will evaluate it asynchronously.
 func SubmitHandler(w http.ResponseWriter, r *http.Request) {
 	exerciseID := r.PathValue("id")
 	userID := auth.UserIDFromCtx(r.Context())
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxCodeBytes)
 	var req submitRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httputil.Error(w, "invalid JSON body", http.StatusBadRequest)
