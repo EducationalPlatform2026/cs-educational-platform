@@ -69,7 +69,7 @@ func StatsHandler(w http.ResponseWriter, r *http.Request) {
 // ListUsersHandler — GET /admin/users
 func ListUsersHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Pool.Query(r.Context(), `
-		SELECT id, email, first_name, last_name, role, is_active, created_at
+		SELECT id, email, first_name, last_name, role::text, is_active, created_at::text
 		FROM users
 		ORDER BY created_at DESC
 	`)
@@ -161,12 +161,12 @@ func ToggleActiveHandler(w http.ResponseWriter, r *http.Request) {
 func ListCoursesHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Pool.Query(r.Context(), `
 		SELECT
-			c.id, c.title, c.created_by,
+			c.id, c.title, c.created_by::text,
 			u.first_name || ' ' || u.last_name AS creator_name,
 			c.is_published,
-			(SELECT COUNT(*) FROM course_enrollments ce WHERE ce.course_id = c.id) AS enroll_count,
-			(SELECT COUNT(*) FROM exercises e WHERE e.course_id = c.id)            AS exercise_count,
-			c.created_at
+			(SELECT COUNT(*) FROM course_enrollments ce WHERE ce.course_id = c.id)::int AS enroll_count,
+			(SELECT COUNT(*) FROM exercises e WHERE e.course_id = c.id)::int            AS exercise_count,
+			c.created_at::text
 		FROM courses c
 		JOIN users u ON u.id = c.created_by
 		ORDER BY c.created_at DESC
