@@ -3,6 +3,7 @@ package submissions
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -28,7 +29,8 @@ func scanSubmission(s *Submission, scan func(...any) error) error {
 const maxCodeBytes = 512 * 1024
 
 // SubmitHandler POST /exercises/{id}/submit  [any authenticated user]
-// Stores the submission as pending. The sandbox will evaluate it asynchronously.
+// For coding exercises: stores the submission as pending for the sandbox.
+// For quiz exercises: grades immediately and returns the final result.
 func SubmitHandler(w http.ResponseWriter, r *http.Request) {
 	exerciseID := r.PathValue("id")
 	userID := auth.UserIDFromCtx(r.Context())
@@ -43,23 +45,26 @@ func SubmitHandler(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, "code is required", http.StatusBadRequest)
 		return
 	}
-	if req.Language == "" {
-		httputil.Error(w, "language is required", http.StatusBadRequest)
-		return
-	}
 
-	// Verify the exercise exists and fetch its course_id + published flag.
+	// Verify the exercise exists and fetch its course_id, published flag, and type.
 	var isPublished bool
-	var courseID string
+	var courseID, exType string
+	var quizCorrectJSON []byte
 	err := db.Pool.QueryRow(r.Context(),
-		`SELECT is_published, course_id FROM exercises WHERE id = $1`, exerciseID,
-	).Scan(&isPublished, &courseID)
+		`SELECT is_published, course_id, exercise_type, quiz_correct FROM exercises WHERE id = $1`, exerciseID,
+	).Scan(&isPublished, &courseID, &exType, &quizCorrectJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Language is required only for coding exercises.
+	if exType != "quiz" && req.Language == "" {
+		httputil.Error(w, "language is required", http.StatusBadRequest)
 		return
 	}
 
@@ -87,6 +92,61 @@ func SubmitHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Quiz exercises: grade immediately without sandbox.
+	if exType == "quiz" {
+		// Parse the correct answer set from the exercise.
+		var correctIndices []int
+		if len(quizCorrectJSON) > 0 {
+			_ = json.Unmarshal(quizCorrectJSON, &correctIndices)
+		}
+
+		// Parse submitted answer(s). Accept both "1" (legacy) and "[0,2]" (array) formats.
+		var submitted []int
+		if err2 := json.Unmarshal([]byte(req.Code), &submitted); err2 != nil {
+			var single int
+			if _, err3 := fmt.Sscanf(req.Code, "%d", &single); err3 == nil {
+				submitted = []int{single}
+			}
+		}
+
+		// Compare sets.
+		correctSet := make(map[int]bool, len(correctIndices))
+		for _, v := range correctIndices {
+			correctSet[v] = true
+		}
+		accepted := len(submitted) == len(correctSet)
+		if accepted {
+			for _, v := range submitted {
+				if !correctSet[v] {
+					accepted = false
+					break
+				}
+			}
+		}
+
+		status := "wrong_answer"
+		var score float64
+		if accepted {
+			status = "accepted"
+			score = 100
+		}
+
+		var s Submission
+		row := db.Pool.QueryRow(r.Context(),
+			`INSERT INTO submissions (exercise_id, user_id, code, language, status, score)
+			 VALUES ($1, $2, $3, 'quiz', $4, $5)
+			 RETURNING `+submissionFields,
+			exerciseID, userID, req.Code, status, score,
+		)
+		if err := scanSubmission(&s, row.Scan); err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		httputil.WriteJSON(w, http.StatusCreated, s)
+		return
+	}
+
+	// Coding exercise: store as pending for the sandbox.
 	var s Submission
 	row := db.Pool.QueryRow(r.Context(),
 		`INSERT INTO submissions (exercise_id, user_id, code, language)

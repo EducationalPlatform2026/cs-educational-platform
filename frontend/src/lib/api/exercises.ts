@@ -8,11 +8,15 @@ export interface Exercise {
 	description?: string;
 	instructions: string;
 	difficulty: 'easy' | 'medium' | 'hard';
-	language: 'python' | 'go' | 'java' | 'c' | 'cpp' | 'javascript';
+	exercise_type: 'coding' | 'quiz';
+	language?: 'python' | 'go' | 'java' | 'c' | 'cpp' | 'javascript';
 	template_code?: string;
 	time_limit_ms: number;
 	memory_limit_kb: number;
 	is_published: boolean;
+	quiz_options?: string[];
+	quiz_correct?: number[];
+	quiz_allow_multiple?: boolean;
 	created_at: string;
 	updated_at: string;
 }
@@ -52,11 +56,15 @@ export function createExercise(
 		description?: string;
 		instructions: string;
 		difficulty: string;
-		language: string;
+		exercise_type: string;
+		language?: string;
 		template_code?: string;
 		time_limit_ms?: number;
 		memory_limit_kb?: number;
 		is_published?: boolean;
+		quiz_options?: string[];
+		quiz_correct?: number[];
+		quiz_allow_multiple?: boolean;
 	}
 ): Promise<Exercise> {
 	return apiFetch(`/courses/${courseId}/exercises`, {
@@ -72,11 +80,15 @@ export function updateExercise(
 		description: string;
 		instructions: string;
 		difficulty: string;
+		exercise_type: string;
 		language: string;
 		template_code: string;
 		time_limit_ms: number;
 		memory_limit_kb: number;
 		is_published: boolean;
+		quiz_options: string[];
+		quiz_correct: number[];
+		quiz_allow_multiple: boolean;
 	}>
 ): Promise<Exercise> {
 	return apiFetch(`/exercises/${id}`, { method: 'PUT', body: JSON.stringify(data) });

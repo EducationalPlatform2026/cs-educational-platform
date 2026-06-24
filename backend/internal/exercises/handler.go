@@ -15,7 +15,7 @@ import (
 
 const exerciseFields = `id, course_id, created_by, title, description, instructions,
 	difficulty, language, template_code, time_limit_ms, memory_limit_kb, is_published,
-	created_at, updated_at`
+	exercise_type, quiz_options, quiz_correct, quiz_allow_multiple, created_at, updated_at`
 
 // exerciseCourseAndOwner returns the course_id and created_by for an exercise.
 // Returns pgx.ErrNoRows if not found.
@@ -51,13 +51,51 @@ func canModifyInCourse(ctx context.Context, role, courseID, userID, ownerID stri
 	}
 }
 
-// scanExercise fills an Exercise from the 14 standard columns.
+// scanExercise fills an Exercise from the 18 standard columns.
 func scanExercise(e *Exercise, scan func(...any) error) error {
-	return scan(
+	var qoBytes, qcBytes []byte
+	err := scan(
 		&e.ID, &e.CourseID, &e.CreatedBy, &e.Title, &e.Description, &e.Instructions,
 		&e.Difficulty, &e.Language, &e.TemplateCode, &e.TimeLimitMs, &e.MemoryLimitKb,
-		&e.IsPublished, &e.CreatedAt, &e.UpdatedAt,
+		&e.IsPublished, &e.ExerciseType, &qoBytes, &qcBytes, &e.QuizAllowMultiple,
+		&e.CreatedAt, &e.UpdatedAt,
 	)
+	if err != nil {
+		return err
+	}
+	if len(qoBytes) > 0 {
+		_ = json.Unmarshal(qoBytes, &e.QuizOptions)
+	}
+	if len(qcBytes) > 0 {
+		_ = json.Unmarshal(qcBytes, &e.QuizCorrect)
+	}
+	return nil
+}
+
+// quizOptionsParam returns a string (JSON) suitable for a ::jsonb parameter,
+// or nil (SQL NULL, keeps existing value) if opts is empty.
+func quizOptionsParam(opts []string) interface{} {
+	if len(opts) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(opts)
+	if err != nil {
+		return nil
+	}
+	return string(b)
+}
+
+// quizCorrectParam returns a JSON string for the quiz_correct ::jsonb parameter,
+// or nil (SQL NULL, keeps existing value) if indices is empty.
+func quizCorrectParam(indices []int) interface{} {
+	if len(indices) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(indices)
+	if err != nil {
+		return nil
+	}
+	return string(b)
 }
 
 // canManageExercise reports whether this role can create/edit exercises in a course.
@@ -148,14 +186,13 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, result)
 }
 
-// CreateHandler POST /courses/{id}/exercises  [professor (course owner), admin]
+// CreateHandler POST /courses/{id}/exercises  [professor (course owner), enrolled TA, admin]
 func CreateHandler(w http.ResponseWriter, r *http.Request) {
 	courseID := r.PathValue("id")
 	userID := auth.UserIDFromCtx(r.Context())
 	role := auth.RoleFromCtx(r.Context())
 
-	// Verify the course exists and fetch its owner in one query so the caller
-	// gets a 404 instead of an opaque 500 FK-violation error.
+	// Verify the course exists and fetch its owner.
 	var courseCreatedBy string
 	if err := db.Pool.QueryRow(r.Context(),
 		`SELECT created_by FROM courses WHERE id = $1`, courseID,
@@ -191,9 +228,22 @@ func CreateHandler(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, "instructions is required", http.StatusBadRequest)
 		return
 	}
-	if req.Language == "" {
-		httputil.Error(w, "language is required", http.StatusBadRequest)
+	if req.ExerciseType == "" {
+		req.ExerciseType = "coding"
+	}
+	if req.ExerciseType == "coding" && req.Language == "" {
+		httputil.Error(w, "language is required for coding exercises", http.StatusBadRequest)
 		return
+	}
+	if req.ExerciseType == "quiz" {
+		if len(req.QuizOptions) < 2 {
+			httputil.Error(w, "quiz exercises require at least 2 options", http.StatusBadRequest)
+			return
+		}
+		if len(req.QuizCorrect) == 0 {
+			httputil.Error(w, "quiz exercises require at least one correct answer", http.StatusBadRequest)
+			return
+		}
 	}
 	if req.Difficulty == "" {
 		req.Difficulty = "medium"
@@ -209,15 +259,23 @@ func CreateHandler(w http.ResponseWriter, r *http.Request) {
 		memoryLimitKb = *req.MemoryLimitKb
 	}
 
+	// Language is NULL for quiz exercises.
+	var lang *string
+	if req.ExerciseType == "coding" {
+		lang = &req.Language
+	}
+
 	var e Exercise
 	row := db.Pool.QueryRow(r.Context(),
 		`INSERT INTO exercises
 		   (course_id, created_by, title, description, instructions,
-		    difficulty, language, template_code, time_limit_ms, memory_limit_kb, is_published)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		    difficulty, language, template_code, time_limit_ms, memory_limit_kb, is_published,
+		    exercise_type, quiz_options, quiz_correct, quiz_allow_multiple)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14::jsonb,$15)
 		 RETURNING `+exerciseFields,
 		courseID, userID, req.Title, req.Description, req.Instructions,
-		req.Difficulty, req.Language, req.TemplateCode, timeLimitMs, memoryLimitKb, req.IsPublished,
+		req.Difficulty, lang, req.TemplateCode, timeLimitMs, memoryLimitKb, req.IsPublished,
+		req.ExerciseType, quizOptionsParam(req.QuizOptions), quizCorrectParam(req.QuizCorrect), req.QuizAllowMultiple,
 	)
 	if err := scanExercise(&e, row.Scan); err != nil {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
@@ -270,7 +328,7 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, e)
 }
 
-// UpdateHandler PUT /exercises/{id}  [professor (owner), admin]
+// UpdateHandler PUT /exercises/{id}  [professor (owner), enrolled TA, admin]
 func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	role := auth.RoleFromCtx(r.Context())
@@ -304,19 +362,25 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	var e Exercise
 	row := db.Pool.QueryRow(r.Context(),
 		`UPDATE exercises SET
-		     title          = COALESCE($1,  title),
-		     description    = COALESCE($2,  description),
-		     instructions   = COALESCE($3,  instructions),
-		     difficulty     = COALESCE($4,  difficulty),
-		     language       = COALESCE($5,  language),
-		     template_code  = COALESCE($6,  template_code),
-		     time_limit_ms  = COALESCE($7,  time_limit_ms),
-		     memory_limit_kb = COALESCE($8, memory_limit_kb),
-		     is_published   = COALESCE($9,  is_published)
-		 WHERE id = $10
+		     title               = COALESCE($1,  title),
+		     description         = COALESCE($2,  description),
+		     instructions        = COALESCE($3,  instructions),
+		     difficulty          = COALESCE($4,  difficulty),
+		     exercise_type       = COALESCE($5,  exercise_type),
+		     language            = COALESCE($6,  language),
+		     template_code       = COALESCE($7,  template_code),
+		     time_limit_ms       = COALESCE($8,  time_limit_ms),
+		     memory_limit_kb     = COALESCE($9,  memory_limit_kb),
+		     is_published        = COALESCE($10, is_published),
+		     quiz_options        = COALESCE($11::jsonb, quiz_options),
+		     quiz_correct        = COALESCE($12::jsonb, quiz_correct),
+		     quiz_allow_multiple = COALESCE($13, quiz_allow_multiple)
+		 WHERE id = $14
 		 RETURNING `+exerciseFields,
-		req.Title, req.Description, req.Instructions, req.Difficulty, req.Language,
-		req.TemplateCode, req.TimeLimitMs, req.MemoryLimitKb, req.IsPublished, id,
+		req.Title, req.Description, req.Instructions, req.Difficulty, req.ExerciseType,
+		req.Language, req.TemplateCode, req.TimeLimitMs, req.MemoryLimitKb, req.IsPublished,
+		quizOptionsParam(req.QuizOptions), quizCorrectParam(req.QuizCorrect),
+		req.QuizAllowMultiple, id,
 	)
 	if err = scanExercise(&e, row.Scan); errors.Is(err, pgx.ErrNoRows) {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
@@ -440,7 +504,7 @@ func ListTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, result)
 }
 
-// CreateTestCaseHandler POST /exercises/{id}/test-cases  [professor (owner), admin]
+// CreateTestCaseHandler POST /exercises/{id}/test-cases  [professor (owner), enrolled TA, admin]
 func CreateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	exerciseID := r.PathValue("id")
 	role := auth.RoleFromCtx(r.Context())
@@ -490,7 +554,7 @@ func CreateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusCreated, tc)
 }
 
-// UpdateTestCaseHandler PUT /test-cases/{id}  [professor (owner), admin]
+// UpdateTestCaseHandler PUT /test-cases/{id}  [professor (owner), enrolled TA, admin]
 func UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	role := auth.RoleFromCtx(r.Context())
@@ -544,7 +608,7 @@ func UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, tc)
 }
 
-// DeleteTestCaseHandler DELETE /test-cases/{id}  [professor (owner), admin]
+// DeleteTestCaseHandler DELETE /test-cases/{id}  [professor (owner), enrolled TA, admin]
 func DeleteTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	role := auth.RoleFromCtx(r.Context())

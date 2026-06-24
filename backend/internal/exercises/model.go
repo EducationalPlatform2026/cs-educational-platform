@@ -11,12 +11,16 @@ type Exercise struct {
 	Description   *string   `json:"description,omitempty"`
 	Instructions  string    `json:"instructions"`
 	Difficulty    string    `json:"difficulty"`
-	Language      string    `json:"language"`
+	Language      *string   `json:"language,omitempty"`
 	TemplateCode  *string   `json:"template_code,omitempty"`
 	TimeLimitMs   int       `json:"time_limit_ms"`
 	MemoryLimitKb int       `json:"memory_limit_kb"`
-	IsPublished   bool      `json:"is_published"`
-	CreatedAt     time.Time `json:"created_at"`
+	IsPublished       bool      `json:"is_published"`
+	ExerciseType      string    `json:"exercise_type"`
+	QuizOptions       []string  `json:"quiz_options,omitempty"`
+	QuizCorrect       []int     `json:"quiz_correct,omitempty"`
+	QuizAllowMultiple bool      `json:"quiz_allow_multiple"`
+	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
@@ -45,28 +49,36 @@ type HiddenTestCase struct {
 // ── Request types ────────────────────────────────────────────────────────────
 
 type createExerciseRequest struct {
-	Title         string  `json:"title"`
-	Description   *string `json:"description"`
-	Instructions  string  `json:"instructions"`
-	Difficulty    string  `json:"difficulty"`
-	Language      string  `json:"language"`
-	TemplateCode  *string `json:"template_code"`
-	TimeLimitMs   *int    `json:"time_limit_ms"`
-	MemoryLimitKb *int    `json:"memory_limit_kb"`
-	IsPublished   bool    `json:"is_published"`
+	Title         string   `json:"title"`
+	Description   *string  `json:"description"`
+	Instructions  string   `json:"instructions"`
+	Difficulty    string   `json:"difficulty"`
+	ExerciseType  string   `json:"exercise_type"`
+	Language      string   `json:"language"`
+	TemplateCode  *string  `json:"template_code"`
+	TimeLimitMs   *int     `json:"time_limit_ms"`
+	MemoryLimitKb *int     `json:"memory_limit_kb"`
+	IsPublished       bool     `json:"is_published"`
+	QuizOptions       []string `json:"quiz_options"`
+	QuizCorrect       []int    `json:"quiz_correct"`
+	QuizAllowMultiple bool     `json:"quiz_allow_multiple"`
 }
 
 // updateExerciseRequest uses pointers so omitted fields are left unchanged (COALESCE).
 type updateExerciseRequest struct {
-	Title         *string `json:"title"`
-	Description   *string `json:"description"`
-	Instructions  *string `json:"instructions"`
-	Difficulty    *string `json:"difficulty"`
-	Language      *string `json:"language"`
-	TemplateCode  *string `json:"template_code"`
-	TimeLimitMs   *int    `json:"time_limit_ms"`
-	MemoryLimitKb *int    `json:"memory_limit_kb"`
-	IsPublished   *bool   `json:"is_published"`
+	Title         *string  `json:"title"`
+	Description   *string  `json:"description"`
+	Instructions  *string  `json:"instructions"`
+	Difficulty    *string  `json:"difficulty"`
+	ExerciseType  *string  `json:"exercise_type"`
+	Language      *string  `json:"language"`
+	TemplateCode  *string  `json:"template_code"`
+	TimeLimitMs   *int     `json:"time_limit_ms"`
+	MemoryLimitKb *int     `json:"memory_limit_kb"`
+	IsPublished       *bool    `json:"is_published"`
+	QuizOptions       []string `json:"quiz_options"`
+	QuizCorrect       []int    `json:"quiz_correct"`
+	QuizAllowMultiple *bool    `json:"quiz_allow_multiple"`
 }
 
 type createTestCaseRequest struct {

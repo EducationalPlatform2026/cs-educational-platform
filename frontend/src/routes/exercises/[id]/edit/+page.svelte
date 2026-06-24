@@ -30,9 +30,19 @@
 		saveError = '';
 		try {
 			await updateExercise(id, {
-				...data,
+				title: data.title,
 				description: data.description || undefined,
-				template_code: data.template_code || undefined
+				instructions: data.instructions,
+				difficulty: data.difficulty,
+				exercise_type: data.exercise_type,
+				language: data.exercise_type === 'coding' ? data.language : undefined,
+				template_code: data.exercise_type === 'coding' ? (data.template_code || undefined) : undefined,
+				time_limit_ms: data.exercise_type === 'coding' ? data.time_limit_ms : undefined,
+				memory_limit_kb: data.exercise_type === 'coding' ? data.memory_limit_kb : undefined,
+				is_published: data.is_published,
+				quiz_options: data.exercise_type === 'quiz' ? data.quiz_options : undefined,
+				quiz_correct: data.exercise_type === 'quiz' ? data.quiz_correct : undefined,
+				quiz_allow_multiple: data.exercise_type === 'quiz' ? data.quiz_allow_multiple : undefined
 			});
 			goto(`/exercises/${id}`);
 		} catch (err: unknown) {
