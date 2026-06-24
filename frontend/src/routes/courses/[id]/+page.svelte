@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { getCourse, getCourseMembers, enrollCourse, getCourseLeaderboard, type Course, type Member, type LeaderboardEntry } from '$lib/api/courses';
+	import { getCourse, getCourseMembers, enrollCourse, updateMemberRole, getCourseLeaderboard, type Course, type Member, type LeaderboardEntry } from '$lib/api/courses';
 	import { listExercises, deleteExercise, type Exercise } from '$lib/api/exercises';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { userStore } from '$lib/stores/userStore.svelte';
@@ -20,16 +20,30 @@
 	let enrolling = $state(false);
 	let enrolled = $state(false);
 	let deletingEx = $state<Record<string, boolean>>({});
+	let updatingRole = $state<Record<string, boolean>>({});
 	let activeTab = $state<'path' | 'leaderboard' | 'members'>('path');
 
+	// Professor/admin have full management rights.
 	const canManage = $derived(auth.user?.role === 'professor' || auth.user?.role === 'admin');
-	const canManageExercises = $derived(
-		canManage || (auth.user?.role === 'teaching_assistant' && enrolled)
+
+	// A student promoted to course TA has enrollment role 'teaching_assistant'.
+	// Members are fetched for all enrolled users, so this is always reliable after load.
+	const isEnrolledAsCourseTA = $derived(
+		members.some((m) => m.user_id === auth.user?.user_id && m.role === 'teaching_assistant')
 	);
-	const canEnroll = $derived(auth.user?.role === 'student' || auth.user?.role === 'teaching_assistant');
-	const canSeeMembers = $derived(
-		auth.user?.role === 'professor' || auth.user?.role === 'teaching_assistant' || auth.user?.role === 'admin'
-	);
+
+	// Exercise management: professor/admin, or a student who is course TA.
+	const canManageExercises = $derived(canManage || isEnrolledAsCourseTA);
+
+	// Only students can enroll; professors own courses, TAs are promoted from students.
+	const canEnroll = $derived(auth.user?.role === 'student');
+
+	// Members tab visible to: professor, admin, or enrolled course TA.
+	const canSeeMembers = $derived(canManage || isEnrolledAsCourseTA);
+
+	// Stats visible to same set as members.
+	const canSeeStats = $derived(canManage || isEnrolledAsCourseTA);
+
 	const canAccess = $derived(enrolled || canManage);
 
 	const solvedCount = $derived(exList.filter((e) => userStore.isSolved(e.id)).length);
@@ -52,21 +66,26 @@
 		return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 	}
 
-	function roleLabel(role: string) { return role.replace('_', ' '); }
+	function roleLabel(role: string) { return role === 'teaching_assistant' ? 'Course TA' : role; }
 
 	onMount(async () => {
 		try {
-			const [c, m, ex, lb] = await Promise.all([
+			// Always fetch members for enrolled users — students need their own enrollment
+			// role to determine TA status (which gates canManageExercises and canSeeMembers).
+			const [c, ex, lb] = await Promise.all([
 				getCourse(id),
-				canSeeMembers ? getCourseMembers(id) : Promise.resolve([]),
 				listExercises(id),
 				getCourseLeaderboard(id)
 			]);
 			course = c;
 			enrolled = c.is_enrolled;
-			members = m;
 			exList = ex;
 			leaderboard = lb;
+
+			// Fetch members after we know enrollment — enrolled students and privileged roles.
+			if (enrolled || canManage) {
+				members = await getCourseMembers(id);
+			}
 		} catch (err: unknown) {
 			error = err instanceof Error ? err.message : 'Failed to load course';
 		} finally {
@@ -79,10 +98,24 @@
 		try {
 			await enrollCourse(id);
 			enrolled = true;
+			// Refresh members so TA status is correct after enrolling.
+			members = await getCourseMembers(id);
 		} catch (err: unknown) {
 			alert(err instanceof Error ? err.message : 'Enroll failed');
 		} finally {
 			enrolling = false;
+		}
+	}
+
+	async function handleMemberRoleChange(userId: string, newRole: 'student' | 'teaching_assistant') {
+		updatingRole = { ...updatingRole, [userId]: true };
+		try {
+			await updateMemberRole(id, userId, newRole);
+			members = members.map((m) => m.user_id === userId ? { ...m, role: newRole } : m);
+		} catch (err: unknown) {
+			alert(err instanceof Error ? err.message : 'Failed to update role');
+		} finally {
+			updatingRole = { ...updatingRole, [userId]: false };
 		}
 	}
 
@@ -146,7 +179,7 @@
 							</button>
 						{/if}
 					{/if}
-					{#if canSeeMembers}
+					{#if canSeeStats}
 						<a href="/courses/{course.id}/stats" class="btn-outline">Stats</a>
 					{/if}
 					{#if canManage}
@@ -260,7 +293,7 @@
 		</section>
 		{/if}
 
-		<!-- ── Members (privileged) ─────── -->
+		<!-- ── Members (professor / admin / course TA) ─────── -->
 		{#if activeTab === 'members' && canSeeMembers}
 		<section class="section">
 			<h2>Enrolled members ({members.length})</h2>
@@ -270,14 +303,36 @@
 				<div class="members-wrap">
 					<table class="members-table">
 						<thead>
-							<tr><th>Name</th><th>Role</th><th>Enrolled</th></tr>
+							<tr>
+								<th>Name</th>
+								<th>Course role</th>
+								<th>Enrolled</th>
+								{#if canManage}<th></th>{/if}
+							</tr>
 						</thead>
 						<tbody>
 							{#each members as m (m.user_id)}
 								<tr>
 									<td>{m.first_name} {m.last_name}</td>
-									<td><span class="role-badge">{roleLabel(m.role)}</span></td>
+									<td><span class="role-badge role-badge--{m.role}">{roleLabel(m.role)}</span></td>
 									<td>{formatDate(m.enrolled_at)}</td>
+									{#if canManage}
+										<td class="member-actions">
+											{#if m.role === 'student'}
+												<button
+													class="btn-xs btn-promote"
+													disabled={updatingRole[m.user_id]}
+													onclick={() => handleMemberRoleChange(m.user_id, 'teaching_assistant')}
+												>{updatingRole[m.user_id] ? '…' : 'Promote to TA'}</button>
+											{:else if m.role === 'teaching_assistant'}
+												<button
+													class="btn-xs btn-demote"
+													disabled={updatingRole[m.user_id]}
+													onclick={() => handleMemberRoleChange(m.user_id, 'student')}
+												>{updatingRole[m.user_id] ? '…' : 'Demote'}</button>
+											{/if}
+										</td>
+									{/if}
 								</tr>
 							{/each}
 						</tbody>
@@ -398,6 +453,12 @@
 	.members-table td { padding:0.75rem 1rem; border-bottom:1px solid var(--border-light); color:var(--text-2); }
 	.members-table tr:last-child td { border-bottom:none; }
 	.role-badge { background:var(--primary-bg); color:var(--primary); font-size:0.75rem; font-weight:600; padding:2px 8px; border-radius:99px; text-transform:capitalize; }
+	.role-badge--teaching_assistant { background:#fef3c7; color:#92400e; }
+	.member-actions { text-align:right; width:1%; white-space:nowrap; }
+	.btn-xs.btn-promote { background:#0d9488; color:#fff; }
+	.btn-xs.btn-promote:hover:not(:disabled) { background:#0f766e; }
+	.btn-xs.btn-demote { background:transparent; color:var(--text-3); border:1px solid var(--border); }
+	.btn-xs.btn-demote:hover:not(:disabled) { background:var(--bg-hover); }
 
 	/* ── Leaderboard extras ── */
 	.top-row td { font-weight: 600; }

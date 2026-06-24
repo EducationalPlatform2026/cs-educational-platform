@@ -55,7 +55,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		req.Role = RoleStudent
 	}
 	allowedRoles := map[string]bool{
-		RoleStudent: true, RoleTeachingAssistant: true, RoleProfessor: true,
+		RoleStudent: true, RoleProfessor: true,
 	}
 	if !allowedRoles[req.Role] {
 		httputil.Error(w, "invalid role", http.StatusBadRequest)

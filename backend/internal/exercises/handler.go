@@ -39,15 +39,17 @@ func testCaseCourseAndOwner(ctx context.Context, testCaseID string) (courseID, o
 }
 
 // canModifyInCourse checks write permission for an exercise or test case in courseID.
-// Admin: always. Professor: must own the resource (ownerID == userID). TA: must be enrolled.
+// Admin: always. Professor: must own the course. Student: must be enrolled as course TA.
 func canModifyInCourse(ctx context.Context, role, courseID, userID, ownerID string) (bool, error) {
 	switch role {
 	case auth.RoleAdmin:
 		return true, nil
-	case auth.RoleTeachingAssistant:
-		return isEnrolled(ctx, courseID, userID)
-	default: // professor
+	case auth.RoleProfessor:
 		return ownerID == userID, nil
+	case auth.RoleStudent:
+		return isEnrolledAsTA(ctx, courseID, userID)
+	default:
+		return false, nil
 	}
 }
 
@@ -106,10 +108,10 @@ func canManageExercise(role string) bool {
 // requiresEnrollment reports whether this role must be enrolled to access exercises.
 // Professors and admins always have full access regardless of enrollment.
 func requiresEnrollment(role string) bool {
-	return role == auth.RoleStudent || role == auth.RoleTeachingAssistant
+	return role == auth.RoleStudent
 }
 
-// isEnrolled checks whether userID is enrolled in courseID.
+// isEnrolled checks whether userID is enrolled in courseID (any role).
 func isEnrolled(ctx context.Context, courseID, userID string) (bool, error) {
 	var enrolled bool
 	err := db.Pool.QueryRow(ctx,
@@ -117,6 +119,16 @@ func isEnrolled(ctx context.Context, courseID, userID string) (bool, error) {
 		courseID, userID,
 	).Scan(&enrolled)
 	return enrolled, err
+}
+
+// isEnrolledAsTA checks whether userID is enrolled in courseID with enrollment role 'teaching_assistant'.
+func isEnrolledAsTA(ctx context.Context, courseID, userID string) (bool, error) {
+	var ok bool
+	err := db.Pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2 AND role = $3)`,
+		courseID, userID, auth.RoleEnrollmentTA,
+	).Scan(&ok)
+	return ok, err
 }
 
 // ── Exercise handlers ────────────────────────────────────────────────────────
@@ -155,9 +167,19 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Students enrolled as course TAs can see unpublished exercises.
+	showAll := canManageExercise(role)
+	if !showAll && role == auth.RoleStudent {
+		ta, err := isEnrolledAsTA(r.Context(), courseID, userID)
+		if err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		showAll = ta
+	}
+
 	query := `SELECT ` + exerciseFields + ` FROM exercises WHERE course_id = $1`
-	// TAs are already verified as enrolled above; they can see unpublished exercises.
-	if !canManageExercise(role) && role != auth.RoleTeachingAssistant {
+	if !showAll {
 		query += ` AND is_published = true`
 	}
 	query += ` ORDER BY created_at ASC LIMIT 200`
@@ -305,8 +327,16 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TAs enrolled in the course can see unpublished exercises (enrollment verified below).
-	canSeeUnpublished := canManageExercise(role) || e.CreatedBy == userID || role == auth.RoleTeachingAssistant
+	// Students enrolled as course TA can see unpublished exercises.
+	canSeeUnpublished := canManageExercise(role) || e.CreatedBy == userID
+	if !e.IsPublished && !canSeeUnpublished && role == auth.RoleStudent {
+		ta, err := isEnrolledAsTA(r.Context(), e.CourseID, userID)
+		if err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		canSeeUnpublished = ta
+	}
 	if !e.IsPublished && !canSeeUnpublished {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
@@ -473,7 +503,15 @@ func ListTestCasesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	privileged := canManageExercise(role) || role == auth.RoleTeachingAssistant
+	privileged := canManageExercise(role)
+	if !privileged && role == auth.RoleStudent {
+		ta, err := isEnrolledAsTA(r.Context(), courseID, userID)
+		if err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		privileged = ta
+	}
 
 	// Use any to hold either TestCase or HiddenTestCase.
 	result := make([]any, 0)
