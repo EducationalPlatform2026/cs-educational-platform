@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -227,31 +226,12 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// EnrollHandler POST /courses/{id}/enroll  [student, teaching_assistant]
+// EnrollHandler POST /courses/{id}/enroll  [student]
+// Students always enroll with enrollment_role='student'.
+// Professors promote them to course TA via PATCH /courses/{id}/members/{userId}/role.
 func EnrollHandler(w http.ResponseWriter, r *http.Request) {
 	courseID := r.PathValue("id")
 	userID := auth.UserIDFromCtx(r.Context())
-
-	var req enrollRequest
-	// Body is optional — only reject genuinely malformed JSON, not an empty body (io.EOF).
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		httputil.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	// Default to the caller's own user role so a TA enrolling without a body
-	// gets enrollment_role=teaching_assistant rather than student.
-	if req.Role == "" {
-		callerRole := auth.RoleFromCtx(r.Context())
-		if callerRole == auth.RoleTeachingAssistant {
-			req.Role = auth.RoleTeachingAssistant
-		} else {
-			req.Role = auth.RoleStudent
-		}
-	}
-	if req.Role != auth.RoleStudent && req.Role != auth.RoleTeachingAssistant {
-		httputil.Error(w, "role must be student or teaching_assistant", http.StatusBadRequest)
-		return
-	}
 
 	var isPublished bool
 	err := db.Pool.QueryRow(r.Context(),
@@ -272,9 +252,9 @@ func EnrollHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO course_enrollments (user_id, course_id, role)
-		 VALUES ($1, $2, $3)
+		 VALUES ($1, $2, 'student')
 		 ON CONFLICT (user_id, course_id) DO NOTHING`,
-		userID, courseID, req.Role,
+		userID, courseID,
 	)
 	if err != nil {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
@@ -333,10 +313,29 @@ func LeaderboardHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, entries)
 }
 
-// MembersHandler GET /courses/{id}/members  [professor, teaching_assistant, admin]
-// Uses a single LEFT JOIN to detect course-not-found vs empty-enrollment in one query.
+// MembersHandler GET /courses/{id}/members  [professor (owner), admin, enrolled course TA]
+// Any enrolled student may call this to discover their own enrollment role.
+// Access is checked inside: professor/admin see everyone; enrolled students see all members.
 func MembersHandler(w http.ResponseWriter, r *http.Request) {
 	courseID := r.PathValue("id")
+	role := auth.RoleFromCtx(r.Context())
+	userID := auth.UserIDFromCtx(r.Context())
+
+	if role != auth.RoleAdmin && role != auth.RoleProfessor {
+		// Students must be enrolled in the course.
+		var enrolled bool
+		if err := db.Pool.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2)`,
+			courseID, userID,
+		).Scan(&enrolled); err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if !enrolled {
+			httputil.Error(w, "forbidden: you must be enrolled in this course", http.StatusForbidden)
+			return
+		}
+	}
 
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT u.id, u.first_name, u.last_name, ce.role, ce.enrolled_at
@@ -394,4 +393,56 @@ func MembersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, members)
+}
+
+// UpdateMemberRoleHandler PATCH /courses/{id}/members/{userId}/role
+// Only the course owner (professor) or an admin can promote/demote an enrolled member.
+// Body: { "role": "student" | "teaching_assistant" }
+func UpdateMemberRoleHandler(w http.ResponseWriter, r *http.Request) {
+	courseID := r.PathValue("id")
+	targetUserID := r.PathValue("userId")
+	callerID := auth.UserIDFromCtx(r.Context())
+	callerRole := auth.RoleFromCtx(r.Context())
+
+	owner, err := courseOwner(r.Context(), courseID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httputil.Error(w, "course not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if callerRole != auth.RoleAdmin && owner != callerID {
+		httputil.Error(w, "only the course owner or an admin can change member roles", http.StatusForbidden)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	var body struct {
+		Role string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httputil.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if body.Role != auth.RoleStudent && body.Role != auth.RoleEnrollmentTA {
+		httputil.Error(w, "role must be 'student' or 'teaching_assistant'", http.StatusBadRequest)
+		return
+	}
+
+	tag, err := db.Pool.Exec(r.Context(),
+		`UPDATE course_enrollments SET role = $1 WHERE course_id = $2 AND user_id = $3`,
+		body.Role, courseID, targetUserID,
+	)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		httputil.Error(w, "user is not enrolled in this course", http.StatusNotFound)
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"role": body.Role})
 }

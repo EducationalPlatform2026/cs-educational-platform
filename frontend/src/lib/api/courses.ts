@@ -68,3 +68,14 @@ export function getCourseMembers(id: string): Promise<Member[]> {
 export function getCourseLeaderboard(id: string): Promise<LeaderboardEntry[]> {
 	return apiFetch(`/courses/${id}/leaderboard`);
 }
+
+export function updateMemberRole(
+	courseId: string,
+	userId: string,
+	role: 'student' | 'teaching_assistant'
+): Promise<{ role: string }> {
+	return apiFetch(`/courses/${courseId}/members/${userId}/role`, {
+		method: 'PATCH',
+		body: JSON.stringify({ role })
+	});
+}

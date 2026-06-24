@@ -13,7 +13,6 @@
 
 	const roles = [
 		{ value: 'student', label: 'Student' },
-		{ value: 'teaching_assistant', label: 'Teaching Assistant' },
 		{ value: 'professor', label: 'Professor' }
 	];
 

@@ -15,7 +15,7 @@ import (
 
 // submissionPrivileged reports whether this role can see all submissions (not just their own).
 func submissionPrivileged(role string) bool {
-	return role == auth.RoleProfessor || role == auth.RoleAdmin || role == auth.RoleTeachingAssistant
+	return role == auth.RoleProfessor || role == auth.RoleAdmin
 }
 
 const submissionFields = `id, exercise_id, user_id, code, language, status, score, stderr, submitted_at`
@@ -182,9 +182,9 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	privileged := role == auth.RoleProfessor || role == auth.RoleAdmin || role == auth.RoleTeachingAssistant
+	privileged := submissionPrivileged(role)
 
-	// Students and TAs must be enrolled in the course to view submissions.
+	// Students must be enrolled in the course to view submissions.
 	if !privileged {
 		var enrolled bool
 		if err := db.Pool.QueryRow(r.Context(),
@@ -268,7 +268,7 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	privileged := role == auth.RoleProfessor || role == auth.RoleAdmin || role == auth.RoleTeachingAssistant
+	privileged := role == auth.RoleProfessor || role == auth.RoleAdmin || false
 	if s.UserID != userID && !privileged {
 		httputil.Error(w, "submission not found", http.StatusNotFound)
 		return

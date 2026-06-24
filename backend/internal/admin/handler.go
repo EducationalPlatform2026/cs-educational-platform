@@ -111,8 +111,7 @@ func UpdateRoleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowed := map[string]bool{
-		auth.RoleStudent: true, auth.RoleTeachingAssistant: true,
-		auth.RoleProfessor: true, auth.RoleAdmin: true,
+		auth.RoleStudent: true, auth.RoleProfessor: true, auth.RoleAdmin: true,
 	}
 	if !allowed[body.Role] {
 		httputil.Error(w, "invalid role", http.StatusBadRequest)

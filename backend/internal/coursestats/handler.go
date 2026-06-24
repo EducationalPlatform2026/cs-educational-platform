@@ -96,16 +96,17 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 				httputil.Error(w, "forbidden: only the course owner can view stats", http.StatusForbidden)
 				return
 			}
-		} else if role == auth.RoleTeachingAssistant {
-			var enrolled bool
+		} else if role == auth.RoleStudent {
+			// Students enrolled as course TA can view stats.
+			var isCourseTA bool
 			if err := db.Pool.QueryRow(ctx,
-				`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2)`,
+				`SELECT EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = $1 AND user_id = $2 AND role = 'teaching_assistant')`,
 				courseID, userID,
-			).Scan(&enrolled); err != nil {
+			).Scan(&isCourseTA); err != nil {
 				httputil.Error(w, "internal server error", http.StatusInternalServerError)
 				return
-			} else if !enrolled {
-				httputil.Error(w, "forbidden: not enrolled in this course", http.StatusForbidden)
+			} else if !isCourseTA {
+				httputil.Error(w, "forbidden: only the course owner, an admin, or a course TA can view stats", http.StatusForbidden)
 				return
 			}
 		} else {
