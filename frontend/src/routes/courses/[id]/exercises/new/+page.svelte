@@ -12,7 +12,7 @@
 	let error = $state('');
 
 	onMount(() => {
-		if (auth.user?.role !== 'professor' && auth.user?.role !== 'admin') {
+		if (auth.user?.role !== 'professor' && auth.user?.role !== 'teaching_assistant' && auth.user?.role !== 'admin') {
 			goto(`/courses/${courseId}`);
 		}
 	});
