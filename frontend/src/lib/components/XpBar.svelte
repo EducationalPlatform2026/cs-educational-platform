@@ -20,26 +20,26 @@
 	.lv {
 		font-size: 0.72rem;
 		font-weight: 700;
-		color: #7c3aed;
+		color: var(--primary);
 		white-space: nowrap;
 	}
 	.track {
 		flex: 1;
 		height: 5px;
-		background: #ede9fe;
+		background: var(--primary-bg);
 		border-radius: 99px;
 		overflow: hidden;
 		min-width: 60px;
 	}
 	.fill {
 		height: 100%;
-		background: #7c3aed;
+		background: var(--primary);
 		border-radius: 99px;
 		transition: width 0.5s ease;
 	}
 	.label {
 		font-size: 0.68rem;
-		color: #9ca3af;
+		color: var(--text-4);
 		white-space: nowrap;
 	}
 </style>

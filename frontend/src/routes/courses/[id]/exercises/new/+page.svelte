@@ -59,14 +59,14 @@
 	.back-link {
 		display: inline-block;
 		font-size: 0.875rem;
-		color: #6b7280;
+		color: var(--text-3);
 		margin-bottom: 1.5rem;
 	}
-	.back-link:hover { color: #4f46e5; }
+	.back-link:hover { color: var(--primary); }
 
 	.form-card {
-		background: #fff;
-		border: 1px solid #e5e7eb;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		padding: 2rem;
 	}
@@ -75,5 +75,6 @@
 		font-size: 1.4rem;
 		font-weight: 700;
 		margin-bottom: 1.5rem;
+		color: var(--text);
 	}
 </style>
