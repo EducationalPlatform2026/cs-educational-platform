@@ -31,7 +31,7 @@
 		<nav>
 			<a href="/" class="brand">
 				<span class="brand-mark">⚡</span>
-				<span>CodePath</span>
+				<span>CS Educational Platform</span>
 			</a>
 
 			{#if auth.isLoggedIn}
