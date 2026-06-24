@@ -129,7 +129,7 @@
 		border-radius: 12px;
 		padding: 2.5rem;
 		width: 100%;
-		max-width: 440px;
+		max-width: 640px;
 		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 	}
 
