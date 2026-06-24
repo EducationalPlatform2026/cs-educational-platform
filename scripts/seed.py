@@ -46,17 +46,18 @@ def api(method: str, path: str, body: dict | None = None, token: str | None = No
         return None
 
 
-def register(email: str, password: str, first: str, last: str, role: str) -> str:
+def register(email: str, password: str, first: str, last: str, role: str) -> tuple[str, str]:
+    """Returns (token, user_id)."""
     resp = api("POST", "/auth/register", {
         "email": email, "password": password,
         "first_name": first, "last_name": last, "role": role,
     })
     if resp:
-        return resp["token"]
+        return resp["token"], resp["user_id"]
     # Already registered — log in instead
     resp = api("POST", "/auth/login", {"email": email, "password": password})
     if resp:
-        return resp["token"]
+        return resp["token"], resp["user_id"]
     sys.exit(f"Could not register or log in {email}")
 
 
@@ -93,9 +94,14 @@ def add_test_case(token: str, exercise_id: str, inp: str, expected: str, hidden:
     }, token)
 
 
-def enroll(token: str, course_id: str, role: str = "") -> None:
-    body = {"role": role} if role else {}
-    api("POST", f"/courses/{course_id}/enroll", body, token)
+def enroll(token: str, course_id: str) -> None:
+    api("POST", f"/courses/{course_id}/enroll", {}, token)
+
+
+def promote_to_ta(prof_token: str, course_id: str, user_id: str) -> None:
+    """Promote an enrolled student to course TA. Must be called with the professor's token."""
+    api("PATCH", f"/courses/{course_id}/members/{user_id}/role",
+        {"role": "teaching_assistant"}, prof_token)
 
 
 def submit(token: str, exercise_id: str, language: str, code: str) -> None:
@@ -107,25 +113,26 @@ def submit(token: str, exercise_id: str, language: str, code: str) -> None:
 # ── 1. Create users ──────────────────────────────────────────────────────────
 
 log("Creating professors…")
-T_PROF1 = register("alice.morgan@cs.edu",   "Password123", "Alice",    "Morgan",   "professor")
-T_PROF2 = register("bob.carter@cs.edu",     "Password123", "Bob",      "Carter",   "professor")
-T_PROF3 = register("carol.james@cs.edu",    "Password123", "Carol",    "James",    "professor")
+T_PROF1, _ = register("alice.morgan@cs.edu",   "Password123", "Alice",    "Morgan",   "professor")
+T_PROF2, _ = register("bob.carter@cs.edu",     "Password123", "Bob",      "Carter",   "professor")
+T_PROF3, _ = register("carol.james@cs.edu",    "Password123", "Carol",    "James",    "professor")
 
-log("Creating teaching assistants…")
-T_TA1 = register("david.kim@cs.edu",        "Password123", "David",    "Kim",      "teaching_assistant")
-T_TA2 = register("emma.silva@cs.edu",       "Password123", "Emma",     "Silva",    "teaching_assistant")
-T_TA3 = register("frank.liu@cs.edu",        "Password123", "Frank",    "Liu",      "teaching_assistant")
-T_TA4 = register("grace.patel@cs.edu",      "Password123", "Grace",    "Patel",    "teaching_assistant")
+# TAs are regular students globally; they get promoted to course TA per-course below.
+log("Creating future TAs (registered as student)…")
+T_TA1, UID_TA1 = register("david.kim@cs.edu",   "Password123", "David",  "Kim",   "student")
+T_TA2, UID_TA2 = register("emma.silva@cs.edu",  "Password123", "Emma",   "Silva", "student")
+T_TA3, UID_TA3 = register("frank.liu@cs.edu",   "Password123", "Frank",  "Liu",   "student")
+T_TA4, UID_TA4 = register("grace.patel@cs.edu", "Password123", "Grace",  "Patel", "student")
 
 log("Creating students…")
-T_S1 = register("henry.walsh@student.edu",     "Password123", "Henry",   "Walsh",   "student")
-T_S2 = register("isabella.chen@student.edu",   "Password123", "Isabella","Chen",    "student")
-T_S3 = register("jack.novak@student.edu",      "Password123", "Jack",    "Novak",   "student")
-T_S4 = register("kate.torres@student.edu",     "Password123", "Kate",    "Torres",  "student")
-T_S5 = register("liam.oconnor@student.edu",    "Password123", "Liam",    "OConnor", "student")
-T_S6 = register("maya.singh@student.edu",      "Password123", "Maya",    "Singh",   "student")
-T_S7 = register("noah.berg@student.edu",       "Password123", "Noah",    "Berg",    "student")
-T_S8 = register("olivia.martin@student.edu",   "Password123", "Olivia",  "Martin",  "student")
+T_S1, _ = register("henry.walsh@student.edu",     "Password123", "Henry",   "Walsh",   "student")
+T_S2, _ = register("isabella.chen@student.edu",   "Password123", "Isabella","Chen",    "student")
+T_S3, _ = register("jack.novak@student.edu",      "Password123", "Jack",    "Novak",   "student")
+T_S4, _ = register("kate.torres@student.edu",     "Password123", "Kate",    "Torres",  "student")
+T_S5, _ = register("liam.oconnor@student.edu",    "Password123", "Liam",    "OConnor", "student")
+T_S6, _ = register("maya.singh@student.edu",      "Password123", "Maya",    "Singh",   "student")
+T_S7, _ = register("noah.berg@student.edu",       "Password123", "Noah",    "Berg",    "student")
+T_S8, _ = register("olivia.martin@student.edu",   "Password123", "Olivia",  "Martin",  "student")
 
 log("Creating admin user via direct DB insert…")
 # Generate bcrypt hash using the project's Go toolchain (cost 12)
@@ -201,27 +208,27 @@ log("Courses created.")
 log("Enrolling members…")
 
 # Python — largest class
-for tok in [T_S1, T_S2, T_S3, T_S4, T_S5, T_S6, T_S7, T_S8]:
+for tok in [T_S1, T_S2, T_S3, T_S4, T_S5, T_S6, T_S7, T_S8, T_TA1, T_TA2]:
     enroll(tok, CID_PYTHON)
-enroll(T_TA1, CID_PYTHON, "teaching_assistant")
-enroll(T_TA2, CID_PYTHON, "teaching_assistant")
+promote_to_ta(T_PROF1, CID_PYTHON, UID_TA1)
+promote_to_ta(T_PROF1, CID_PYTHON, UID_TA2)
 
 # Algorithms
-for tok in [T_S1, T_S2, T_S3, T_S5, T_S7]:
+for tok in [T_S1, T_S2, T_S3, T_S5, T_S7, T_TA1, T_TA3]:
     enroll(tok, CID_ALGO)
-enroll(T_TA1, CID_ALGO, "teaching_assistant")
-enroll(T_TA3, CID_ALGO, "teaching_assistant")
+promote_to_ta(T_PROF1, CID_ALGO, UID_TA1)
+promote_to_ta(T_PROF1, CID_ALGO, UID_TA3)
 
 # Go
-for tok in [T_S2, T_S4, T_S6, T_S8]:
+for tok in [T_S2, T_S4, T_S6, T_S8, T_TA4]:
     enroll(tok, CID_GO)
-enroll(T_TA4, CID_GO, "teaching_assistant")
+promote_to_ta(T_PROF2, CID_GO, UID_TA4)
 
 # Web
-for tok in [T_S3, T_S5, T_S6, T_S7, T_S8]:
+for tok in [T_S3, T_S5, T_S6, T_S7, T_S8, T_TA2, T_TA3]:
     enroll(tok, CID_WEB)
-enroll(T_TA2, CID_WEB, "teaching_assistant")
-enroll(T_TA3, CID_WEB, "teaching_assistant")
+promote_to_ta(T_PROF3, CID_WEB, UID_TA2)
+promote_to_ta(T_PROF3, CID_WEB, UID_TA3)
 
 log("Enrollment done.")
 
@@ -770,10 +777,10 @@ log("  admin@cs.edu                   — admin")
 log("  alice.morgan@cs.edu            — professor (Python, Algo)")
 log("  bob.carter@cs.edu              — professor (Go, C++)")
 log("  carol.james@cs.edu             — professor (Web)")
-log("  david.kim@cs.edu               — TA (Python, Algo)")
-log("  emma.silva@cs.edu              — TA (Python, Web)")
-log("  frank.liu@cs.edu               — TA (Algo)")
-log("  grace.patel@cs.edu             — TA (Go)")
+log("  david.kim@cs.edu               — student / course TA in: Python, Algo")
+log("  emma.silva@cs.edu              — student / course TA in: Python, Web")
+log("  frank.liu@cs.edu               — student / course TA in: Algo, Web")
+log("  grace.patel@cs.edu             — student / course TA in: Go")
 log("  henry.walsh@student.edu        — student")
 log("  isabella.chen@student.edu      — student")
 log("  jack.novak@student.edu         — student")
