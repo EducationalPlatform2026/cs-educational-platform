@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { createExercise } from '$lib/api/exercises';
+	import { getCourseMembers } from '$lib/api/courses';
 	import ExerciseForm, { type ExerciseFormData } from '$lib/components/ExerciseForm.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { onMount } from 'svelte';
@@ -11,11 +12,19 @@
 	let loading = $state(false);
 	let error = $state('');
 
-	onMount(() => {
+	onMount(async () => {
 		const role = auth.user?.role;
-		if (role !== 'professor' && role !== 'teaching_assistant' && role !== 'admin') {
-			goto(`/courses/${courseId}`);
+		if (role === 'professor' || role === 'admin') return;
+		if (role === 'student') {
+			try {
+				const members = await getCourseMembers(courseId);
+				const me = members.find((m) => m.user_id === auth.user?.user_id);
+				if (me?.role === 'teaching_assistant') return;
+			} catch {
+				// fall through to redirect
+			}
 		}
+		goto(`/courses/${courseId}`);
 	});
 
 	async function handleSubmit(data: ExerciseFormData) {

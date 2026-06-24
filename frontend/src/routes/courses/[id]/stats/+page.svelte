@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { getCourseStats, type CourseStats, type StudentStat } from '$lib/api/coursestats';
+	import { getCourseMembers } from '$lib/api/courses';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const courseId = $derived($page.params.id as string);
@@ -16,10 +17,12 @@
 	let sortKey = $state<SortKey>('solved');
 	let sortAsc = $state(false);
 
+	let isCourseTa = $state(false);
+
 	const canView = $derived(
 		auth.user?.role === 'professor' ||
-		auth.user?.role === 'teaching_assistant' ||
-		auth.user?.role === 'admin'
+		auth.user?.role === 'admin' ||
+		isCourseTa
 	);
 
 	const sortedStudents = $derived(
@@ -68,6 +71,15 @@
 	}
 
 	onMount(async () => {
+		if (auth.user?.role === 'student') {
+			try {
+				const members = await getCourseMembers(courseId);
+				const me = members.find((m) => m.user_id === auth.user?.user_id);
+				isCourseTa = me?.role === 'teaching_assistant';
+			} catch {
+				// isCourseTa stays false
+			}
+		}
 		if (!canView) { goto(`/courses/${courseId}`); return; }
 		try {
 			stats = await getCourseStats(courseId);

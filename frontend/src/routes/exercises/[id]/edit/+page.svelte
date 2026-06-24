@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { getExercise, updateExercise, type Exercise } from '$lib/api/exercises';
+	import { getCourseMembers } from '$lib/api/courses';
 	import ExerciseForm, { type ExerciseFormData } from '$lib/components/ExerciseForm.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 
@@ -14,15 +15,24 @@
 	let saveError = $state('');
 
 	onMount(async () => {
-		if (auth.user?.role !== 'professor' && auth.user?.role !== 'teaching_assistant' && auth.user?.role !== 'admin') {
-			goto(`/exercises/${id}`);
-			return;
-		}
+		const role = auth.user?.role;
 		try {
 			exercise = await getExercise(id);
 		} catch (err: unknown) {
 			fetchError = err instanceof Error ? err.message : 'Failed to load exercise';
+			return;
 		}
+		if (role === 'professor' || role === 'admin') return;
+		if (role === 'student') {
+			try {
+				const members = await getCourseMembers(exercise.course_id);
+				const me = members.find((m) => m.user_id === auth.user?.user_id);
+				if (me?.role === 'teaching_assistant') return;
+			} catch {
+				// fall through to redirect
+			}
+		}
+		goto(`/exercises/${id}`);
 	});
 
 	async function handleSubmit(data: ExerciseFormData) {

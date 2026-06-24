@@ -2,9 +2,12 @@
 """Seed the CS Educational Platform database with realistic test data."""
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import textwrap
+from pathlib import Path
 from typing import Optional
 
 try:
@@ -15,10 +18,21 @@ except ImportError:
 
 API = "http://localhost:8080"
 
-GREEN = "\033[0;32m"
-YELLOW = "\033[1;33m"
-RED = "\033[0;31m"
-NC = "\033[0m"
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleMode(ctypes.windll.kernel32.GetStdHandle(-11), 7)
+        GREEN = "\033[0;32m"
+        YELLOW = "\033[1;33m"
+        RED = "\033[0;31m"
+        NC = "\033[0m"
+    except Exception:
+        GREEN = YELLOW = RED = NC = ""
+else:
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    RED = "\033[0;31m"
+    NC = "\033[0m"
 
 
 def log(msg: str) -> None:
@@ -136,8 +150,8 @@ T_S8, _ = register("olivia.martin@student.edu",   "Password123", "Olivia",  "Mar
 
 log("Creating admin user via direct DB insert…")
 # Generate bcrypt hash using the project's Go toolchain (cost 12)
-BACKEND_DIR = str(__file__).replace("/scripts/seed.py", "/backend")
-GENHASH = "/tmp/genhash_seed.go"
+BACKEND_DIR = str(Path(__file__).resolve().parent.parent / "backend")
+GENHASH = os.path.join(tempfile.gettempdir(), "genhash_seed.go")
 with open(GENHASH, "w") as f:
     f.write('package main\nimport ("fmt";"golang.org/x/crypto/bcrypt")\n'
             'func main(){h,_:=bcrypt.GenerateFromPassword([]byte("Password123"),12);fmt.Println(string(h))}\n')

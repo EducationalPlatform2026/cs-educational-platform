@@ -27,21 +27,27 @@ CS Educational Platform — a web app for managing CS courses, programming exerc
 | `feat/course-stats` | #44 | Professor course report (staff, student roster, solve rates) |
 | `fix/code-review-bugs` | #44 | 8 code-review findings fixed (DB errors, enrollment logic, etc.) |
 | `feat/gamified-frontend` | #45 | Gamified UI: XP bars, streaks, learning path nodes, role-adaptive dashboard, split-pane exercise editor |
+| `fix/security-vulnerabilities` | #46 #48 | 8 security fixes: role whitelist, CORS allowlist, IDOR on test cases, course ownership, body size cap, sandbox limits |
+| `feWork` | #47 | Register page layout fix |
+| `feat/admin-panel` | #50 | Admin UI: user list, role/active toggle, course overview, platform stats |
+| `fix/minor-changes` | #51 | UI fixes, role flows, minor corrections |
+| `feature/fix-TA-role` | #52 | TA can create/edit exercises in courses they're enrolled in |
+| `feature/quizz` | #53 | Quiz exercise type: multiple-choice questions with options, correct answers, allow-multiple flag |
+| `feature/UI` | #54 | Dark mode, UI repolish, leaderboard tab on course page |
 
-### In progress
+### In progress / pending
 
-| Branch | Status |
-|---|---|
-| `fix/security-vulnerabilities` | **Open PR — see Security section below** |
+| Branch | Status | Notes |
+|---|---|---|
+| `feat/ta-enrollment-controls` | Local only — not pushed | Remove TA from register, enforce course-level TA access, professor promote/demote UI in members table |
+| `fix/code-review-findings` | Local only — not pushed | `isEnrolledAsTA` fix, `MaxBytesReader` on exercise handlers, unpublished visibility fixes |
 
-### Upcoming features (in rough priority order)
+### Upcoming features
 
 | Branch (suggested) | Feature | Description |
 |---|---|---|
-| `feat/leaderboard` | Course leaderboard | Rank students in a course by score / accepted exercises. |
 | `feat/notifications` | Real-time status updates | Poll or SSE so the submission result banner auto-refreshes when sandbox finishes. |
 | `feat/plagiarism` | Similarity check | Flag suspicious submissions within a course. |
-| `feat/admin-panel` | Admin management UI | User list, role changes, course overview. |
 
 ---
 
@@ -52,9 +58,13 @@ backend/              Go HTTP API (stdlib net/http, port 8080)
   cmd/server/         main.go — entry point, route registration
   internal/
     auth/             JWT, bcrypt, middleware, role constants
-    courses/          Course CRUD + enrollment handlers
-    exercises/        Exercise CRUD + test case handlers
+    courses/          Course CRUD + enrollment + members + leaderboard handlers
+    exercises/        Exercise CRUD + test case handlers (coding + quiz types)
     submissions/      Submission store + retrieval handlers
+    dashboard/        Student/professor dashboard stats handler
+    coursestats/      Professor course report handler
+    admin/            Admin panel: user list, role/active toggle, course overview, platform stats
+    sandbox/          Goroutine sandbox worker + cross-platform code executor
     db/               pgxpool singleton (db.Pool)
     httputil/         WriteJSON, Error, CORS middleware
 frontend/             SvelteKit 2 + Svelte 5 + TypeScript (port 5173 dev)
@@ -64,16 +74,21 @@ frontend/             SvelteKit 2 + Svelte 5 + TypeScript (port 5173 dev)
         client.ts     apiFetch<T> — attaches Bearer token, throws ApiError
         auth.ts       login(), register()
         courses.ts    listCourses, getCourse, createCourse, updateCourse,
-                      deleteCourse, enrollCourse, getCourseMembers
+                      deleteCourse, enrollCourse, getCourseMembers,
+                      getCourseLeaderboard, updateMemberRole (feat/ta branch)
         exercises.ts  listExercises, getExercise, createExercise, updateExercise,
                       deleteExercise, listTestCases, createTestCase, deleteTestCase
         submissions.ts submitCode, listSubmissions, getSubmission
+        dashboard.ts  getDashboard
+        coursestats.ts getCourseStats
+        admin.ts      getAdminStats, listAdminUsers, listAdminCourses,
+                      updateUserRole, toggleUserActive
       components/
-        ExerciseForm.svelte   Reusable create/edit exercise form
-        DifficultyDot.svelte  Colored dot for easy/medium/hard difficulty
-        XpBar.svelte          Level + XP progress bar (reads userStore)
-        StatChip.svelte       Colored stat card with icon (enrolled/solved/etc.)
-        ProgressRing.svelte   SVG circular progress ring with label
+        ExerciseForm.svelte      Reusable create/edit exercise form (coding + quiz modes)
+        DifficultyDot.svelte     Colored dot for easy/medium/hard difficulty
+        XpBar.svelte             Level + XP progress bar (reads userStore)
+        StatChip.svelte          Colored stat card with icon (enrolled/solved/etc.)
+        ProgressRing.svelte      SVG circular progress ring with label
         LearningPathNode.svelte  done/current/locked exercise node with pulse animation
       stores/
         auth.svelte.ts        Svelte 5 $state auth singleton (localStorage-backed)
@@ -86,27 +101,39 @@ frontend/             SvelteKit 2 + Svelte 5 + TypeScript (port 5173 dev)
       +page.svelte    Root redirect → /dashboard or /auth/login
       auth/
         login/        Login form
-        register/     Register form (student / TA / professor role selector)
+        register/     Register form — student / professor only (TA removed in feat/ta branch)
+      admin/
+        +page.svelte  Admin panel: platform stats, user management (role + active toggle), course overview
       dashboard/
         +page.svelte  Role-adaptive: student (XP bar + stats + learning path preview)
                       vs professor (course management) vs admin/TA
       courses/
         +page.svelte              Course grid with colored strips, filter tabs (All/Enrolled/Available)
         [id]/
-          +page.svelte            Course hero + progress ring + learning path nodes + members table
+          +page.svelte            Course hero + progress ring + learning path nodes
+                                  Members tab (professor/TA/admin) + Leaderboard tab
+                                  Promote/Demote buttons for professors (feat/ta branch)
+          stats/
+            +page.svelte          Professor course report (enrollment, solve rates)
           exercises/new/
-            +page.svelte          Create exercise (professor/admin only)
+            +page.svelte          Create exercise (professor/admin/enrolled-TA)
       exercises/
         [id]/
           +page.svelte            Split-pane: description left, dark code editor right
+                                  Quiz mode: radio/checkbox answer UI
                                   Submit+poll flow, XP float animation, test dot grid
           edit/
-            +page.svelte          Edit exercise (professor/admin only)
+            +page.svelte          Edit exercise (professor/admin/enrolled-TA)
+      submissions/
+        [id]/
+          +page.svelte            Submission detail: status, score, per-test-case results
       sandbox/
         +page.svelte  Split-pane scratchpad: notes left, dark code editor right
                       Language starters, localStorage persistence, no backend needed
 infra/migrations/     Numbered SQL migration files (applied by Docker on first start)
-sandbox/              Code execution engine (not yet implemented)
+  001–005             Core schema (users, courses, enrollments, exercises, submissions)
+  006                 Add exercise_type enum + quiz_options JSONB + quiz_correct SMALLINT
+  007                 Convert quiz_correct to JSONB array, add quiz_allow_multiple BOOLEAN
 docker-compose.yml    PostgreSQL 16-alpine; auto-applies migrations on first start
 .env                  Local secrets — never committed (see .env.example)
 CLAUDE.md             This file
@@ -116,27 +143,26 @@ CLAUDE.md             This file
 
 ## Security
 
-### Fixed vulnerabilities (`fix/security-vulnerabilities`)
+### Fixed vulnerabilities (merged to main)
 
 | Severity | File | What was fixed |
 |---|---|---|
-| **Critical** | `auth/handler.go` | Role whitelist on register — only `student`, `teaching_assistant`, `professor` allowed; `admin` is rejected. Previously any caller could self-assign `admin`. |
-| **High** | `httputil/cors.go` | CORS origin allowlist — only origins listed in `CORS_ORIGIN` env var (default `http://localhost:5173`) receive CORS headers. Previously any `Origin` header was reflected back with `Allow-Credentials: true`. |
-| **High** | `exercises/handler.go` | IDOR on test cases — `CreateTestCaseHandler`, `UpdateTestCaseHandler`, `DeleteTestCaseHandler` now verify the caller owns the parent exercise before mutating. Previously any professor could corrupt another professor's test cases. |
-| **High** | `exercises/handler.go` | Course ownership check on exercise creation — `CreateHandler` now verifies the calling professor owns the course. Previously any professor could inject exercises into any course. |
-| **Medium** | `submissions/handler.go` | Submission body size capped at `512 KB` via `http.MaxBytesReader`. Previously unbounded payloads could exhaust server and DB resources. |
-| **Medium** | `sandbox/executor.go` | `timeLimitMs` ceiling of 15 000 ms — prevents exercise records with an extreme or zero value from creating infinite or zero-duration timeouts. |
-| **Medium** | `sandbox/executor.go` | Temp source files created with mode `0600` (owner-only). Previously `0644` allowed other OS users to read other students' submitted code from `/tmp`. |
-| **Low** | `.env.example` | Added `CORS_ORIGIN` variable and strengthened the JWT_SECRET guidance with a generation command. |
+| **Critical** | `auth/handler.go` | Role whitelist on register — only `student`, `teaching_assistant`, `professor` allowed; `admin` is rejected. |
+| **High** | `httputil/cors.go` | CORS origin allowlist — only origins in `CORS_ORIGIN` env var (default `http://localhost:5173`) receive headers. |
+| **High** | `exercises/handler.go` | IDOR on test cases — handlers verify caller owns the parent exercise before mutating. |
+| **High** | `exercises/handler.go` | Course ownership check on exercise creation — professor must own the course. |
+| **Medium** | `submissions/handler.go` | Submission body capped at 512 KB via `http.MaxBytesReader`. |
+| **Medium** | `sandbox/executor.go` | `timeLimitMs` ceiling of 15 000 ms. |
+| **Medium** | `sandbox/executor.go` | Temp source files created with mode `0600`. |
 
 ### Remaining / won't-fix at application layer
 
 | Issue | Reason |
 |---|---|
-| Sandbox process/network/memory isolation | Requires Docker-in-Docker, seccomp profiles, or a VM per submission — not addressable in Go application code. |
-| JWT stored in `localStorage` (XSS risk) | Migrating to `httpOnly` cookies requires a full auth refactor; acceptable risk for current threat model. |
-| No rate limiting on auth endpoints | Requires a middleware package (e.g. `golang.org/x/time/rate`) — planned for `feat/rate-limiting`. |
-| No token revocation on role change | Requires a token blocklist (Redis) — planned with session management feature. |
+| Sandbox process/network/memory isolation | Requires Docker-in-Docker or seccomp — not addressable in Go application code. |
+| JWT stored in `localStorage` (XSS risk) | Acceptable risk for current threat model. |
+| No rate limiting on auth endpoints | Planned for `feat/rate-limiting`. |
+| No token revocation on role change | Requires a token blocklist (Redis). |
 
 ### Adding a new endpoint — security checklist
 
@@ -152,20 +178,12 @@ CLAUDE.md             This file
 
 The `.env` file lives at the repo root. **Do not rename or move it** — the backend loads it automatically via `godotenv.Load("../.env")` (relative to `backend/`).
 
-To recreate it:
 ```powershell
 Copy-Item .env.example .env
-```
-
-Default values in `.env.example` work out of the box with Docker Compose.
-
-Start the database (required before starting the backend):
-```powershell
 docker compose up -d
 ```
 
-The `initdb.d` mount applies migrations automatically the **first** time the volume is created.  
-To wipe and re-apply from scratch:
+To wipe and re-apply migrations from scratch:
 ```powershell
 docker compose down -v; docker compose up -d
 ```
@@ -190,15 +208,17 @@ cd frontend; npm run dev
 - Backend: http://localhost:8080
 - Frontend: http://localhost:5173
 
-### Registering an admin user (PowerShell)
+### Creating an admin user
 
-The register page only exposes student/TA/professor roles. To create an admin via the API:
+The register page only allows student and professor roles. Create an admin via the API directly:
 
 ```powershell
 Invoke-RestMethod -Uri http://localhost:8080/auth/register -Method Post `
   -ContentType "application/json" `
-  -Body '{"email":"admin@test.com","password":"secret123","first_name":"Admin","last_name":"User","role":"admin"}'
+  -Body '{"email":"admin@example.com","password":"yourpassword","first_name":"Admin","last_name":"User","role":"admin"}'
 ```
+
+Once logged in as admin, use the Admin panel (`/admin`) to manage all users and promote roles.
 
 ---
 
@@ -206,28 +226,18 @@ Invoke-RestMethod -Uri http://localhost:8080/auth/register -Method Post `
 
 ### `bind: Only one usage of each socket address` (port 8080 already in use)
 
-A previous server process was not shut down cleanly.
-
 ```powershell
 Stop-Process -Id (Get-NetTCPConnection -LocalPort 8080).OwningProcess -Force
 ```
 
-Or find the PID manually:
-```powershell
-netstat -ano | findstr :8080
-Stop-Process -Id <PID> -Force
-```
-
 ### `fatal: DATABASE_URL environment variable is not set`
 
-The server auto-loads `../.env` (relative to `backend/`) via `godotenv`. This error means:
 - `.env` does not exist — copy from `.env.example`
 - You are running `go run` from a directory other than `backend/`
 - Docker is not running — start with `docker compose up -d`
 
 ### `db: retrying... (attempt N)` — PostgreSQL not ready
 
-The DB pool retries 10 × 2 s. If it exhausts retries:
 ```powershell
 docker ps                     # is Docker running?
 docker compose ps             # is the db container healthy?
@@ -237,12 +247,14 @@ docker compose restart db     # restart the container
 ### Frontend shows blank page or fails to load
 
 - Backend must be running: `curl http://localhost:8080/health` → `ok`
-- CORS is handled by `httputil.CORS` middleware — no proxy needed
 - The frontend is a pure SPA (`ssr = false`) — all data fetching is client-side
 
-### Submission stays "Pending" forever
+### 500 on `GET /courses/{id}/exercises`
 
-Expected — the sandbox (feat/sandbox) has not been built yet. Submissions are stored with status `pending` and will remain there until the execution engine is implemented.
+The `exercises` table SELECT includes `quiz_allow_multiple` (added in migration 007). If the DB volume predates migration 007, every exercise query fails. Fix by recreating the volume:
+```powershell
+docker compose down -v; docker compose up -d
+```
 
 ---
 
@@ -294,31 +306,40 @@ mux.Handle("POST /courses", auth.Middleware(
 
 ### Courses package (`internal/courses`)
 
-| Endpoint | Method | Roles |
-|---|---|---|
-| `/courses` | GET | any authenticated |
-| `/courses` | POST | professor, admin |
-| `/courses/{id}` | GET | any authenticated |
-| `/courses/{id}` | PUT | professor (owner), admin |
-| `/courses/{id}` | DELETE | professor (owner), admin |
-| `/courses/{id}/enroll` | POST | student, teaching_assistant |
-| `/courses/{id}/members` | GET | professor, teaching_assistant, admin |
+| Endpoint | Method | Roles | Notes |
+|---|---|---|---|
+| `/courses` | GET | any authenticated | |
+| `/courses` | POST | professor, admin | |
+| `/courses/{id}` | GET | any authenticated | |
+| `/courses/{id}` | PUT | professor (owner), admin | |
+| `/courses/{id}` | DELETE | professor (owner), admin | |
+| `/courses/{id}/enroll` | POST | student, teaching_assistant | TA defaults to enrollment_role=teaching_assistant |
+| `/courses/{id}/members` | GET | professor, teaching_assistant, admin | Returns enrollment role (not global role) |
+| `/courses/{id}/leaderboard` | GET | any authenticated | Ranks students by accepted exercise count |
+| `/courses/{id}/members/{userId}/role` | PATCH | professor (owner), admin | Promote/demote enrollment role — in `feat/ta-enrollment-controls` |
 
 ### Exercises package (`internal/exercises`)
 
-| Endpoint | Method | Roles |
-|---|---|---|
-| `/courses/{id}/exercises` | GET | any authenticated |
-| `/courses/{id}/exercises` | POST | professor, admin |
-| `/exercises/{id}` | GET | any authenticated |
-| `/exercises/{id}` | PUT | professor, admin |
-| `/exercises/{id}` | DELETE | professor, admin |
-| `/exercises/{id}/test-cases` | GET | any authenticated (hidden cases stripped for students) |
-| `/exercises/{id}/test-cases` | POST | professor, admin |
-| `/test-cases/{id}` | PUT | professor, admin |
-| `/test-cases/{id}` | DELETE | professor, admin |
+| Endpoint | Method | Roles | Notes |
+|---|---|---|---|
+| `/courses/{id}/exercises` | GET | any authenticated | |
+| `/courses/{id}/exercises` | POST | professor, teaching_assistant, admin | TA write-checked by `canModifyInCourse` |
+| `/exercises/{id}` | GET | any authenticated | |
+| `/exercises/{id}` | PUT | professor, teaching_assistant, admin | TA write-checked by `canModifyInCourse` |
+| `/exercises/{id}` | DELETE | professor, teaching_assistant, admin | TA write-checked by `canModifyInCourse` |
+| `/exercises/{id}/test-cases` | GET | any authenticated | Hidden cases stripped for students |
+| `/exercises/{id}/test-cases` | POST | professor, teaching_assistant, admin | |
+| `/test-cases/{id}` | PUT | professor, teaching_assistant, admin | |
+| `/test-cases/{id}` | DELETE | professor, teaching_assistant, admin | |
 
-Hidden test case handling: students receive `HiddenTestCase` (no `input`/`expected_output`); professors/TAs/admins receive full `TestCase`.
+**TA write access:** `canModifyInCourse` in `exercises/handler.go` checks:
+- Admin → always allowed
+- Professor → must be the resource owner (`ownerID == userID`)
+- TA → must be enrolled in that course with `enrollment_role = 'teaching_assistant'` (via `isEnrolledAsTA`)
+
+**Exercise types:** `exercise_type` is `'coding'` or `'quiz'`.
+- Coding: requires `language` field; has `template_code`, `time_limit_ms`, `memory_limit_kb`, test cases
+- Quiz: has `quiz_options []string`, `quiz_correct []int`, `quiz_allow_multiple bool`; no test cases
 
 ### Submissions package (`internal/submissions`)
 
@@ -327,6 +348,24 @@ Hidden test case handling: students receive `HiddenTestCase` (no `input`/`expect
 | `/exercises/{id}/submit` | POST | any authenticated | Validates exercise exists + published; stores with `pending` status |
 | `/exercises/{id}/submissions` | GET | any authenticated | Students see own only (LIMIT 50); privileged see all (LIMIT 200) |
 | `/submissions/{id}` | GET | any authenticated | Students 404 on others' submissions; returns submission + `results[]` array |
+
+### Admin package (`internal/admin`)
+
+| Endpoint | Method | Notes |
+|---|---|---|
+| `/admin/stats` | GET | Platform totals: users, courses, exercises, submissions, active users, published courses |
+| `/admin/users` | GET | All users with email, role, is_active, created_at |
+| `/admin/users/{id}/role` | PATCH | Change any user's global role |
+| `/admin/users/{id}/active` | PATCH | Toggle is_active (disables login for deactivated users) |
+| `/admin/courses` | GET | All courses with creator name, enrollment count, exercise count |
+
+### Dashboard package (`internal/dashboard`)
+
+`GET /dashboard` — role-adaptive stats response. Students get XP/streak/solved counts. Professors get course/enrollment counts.
+
+### Course stats package (`internal/coursestats`)
+
+`GET /courses/{id}/stats` — professor/TA/admin only. Returns per-student solve rates, exercise difficulty breakdown, enrollment list with scores.
 
 ### Httputil package (`internal/httputil`)
 
@@ -389,7 +428,8 @@ if tag.RowsAffected() == 0 {
 ## Frontend
 
 **Stack:** SvelteKit 2 · Svelte 5 (runes) · TypeScript · Vite 6  
-**SSR:** disabled (`ssr = false` in `+layout.ts`) — pure SPA, all rendering in the browser
+**SSR:** disabled (`ssr = false` in `+layout.ts`) — pure SPA, all rendering in the browser  
+**Theme:** dark mode supported via CSS variables; toggled in `+layout.svelte`
 
 ```powershell
 cd frontend
@@ -460,18 +500,20 @@ Migrations in `infra/migrations/` must be numbered sequentially (`001_`, `002_`,
 
 | Table | Key columns |
 |---|---|
-| `users` | `id UUID PK`, `email UNIQUE`, `password_hash`, `first_name`, `last_name`, `role user_role` |
+| `users` | `id UUID PK`, `email UNIQUE`, `password_hash`, `first_name`, `last_name`, `role user_role`, `is_active BOOL` |
 | `courses` | `id UUID PK`, `created_by → users.id`, `title`, `description`, `is_published BOOL` |
 | `course_enrollments` | `(user_id, course_id) PK`, `role enrollment_role` |
-| `exercises` | `id UUID PK`, `course_id → courses`, `created_by → users`, `title`, `description`, `instructions`, `difficulty difficulty_level`, `language prog_language`, `template_code`, `time_limit_ms INT`, `memory_limit_kb INT`, `is_published BOOL` |
+| `exercises` | `id UUID PK`, `course_id → courses`, `created_by → users`, `title`, `description`, `instructions`, `difficulty difficulty_level`, `language prog_language` (nullable), `template_code`, `time_limit_ms INT`, `memory_limit_kb INT`, `is_published BOOL`, `exercise_type exercise_type`, `quiz_options JSONB`, `quiz_correct JSONB`, `quiz_allow_multiple BOOL` |
 | `test_cases` | `id UUID PK`, `exercise_id → exercises`, `input TEXT`, `expected_output TEXT`, `is_hidden BOOL`, `ordinal INT` |
 | `submissions` | `id UUID PK`, `exercise_id → exercises`, `user_id → users`, `code TEXT`, `language`, `status submission_status DEFAULT 'pending'`, `score FLOAT DEFAULT 0`, `stderr TEXT` |
 | `submission_results` | `id UUID PK`, `submission_id → submissions`, `test_case_id → test_cases`, `status`, `actual_output TEXT`, `runtime_ms INT`, `memory_kb INT` |
 
 **Enums:**
 - `user_role`: `student | teaching_assistant | professor | admin`
+- `enrollment_role`: `student | teaching_assistant`
+- `exercise_type`: `coding | quiz`
 - `difficulty_level`: `easy | medium | hard`
-- `prog_language`: `python | go | java | c | cpp | javascript`
+- `prog_language`: `python | go | java | c | cpp | javascript` (language is NULL for quiz exercises)
 - `submission_status`: `pending | running | accepted | wrong_answer | runtime_error | time_limit | memory_limit | compile_error`
 
 `set_updated_at()` trigger is applied to `users`, `courses`, `exercises`.
