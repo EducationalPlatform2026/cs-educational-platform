@@ -12,6 +12,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"cs-educational-platform/backend/internal/admin"
 	"cs-educational-platform/backend/internal/auth"
 	"cs-educational-platform/backend/internal/courses"
 	"cs-educational-platform/backend/internal/coursestats"
@@ -150,6 +151,33 @@ func main() {
 	// Dashboard
 	mux.Handle("GET /dashboard", auth.Middleware(
 		http.HandlerFunc(dashboard.Handler),
+	))
+
+	// Admin
+	mux.Handle("GET /admin/stats", auth.Middleware(
+		auth.RequireRole(auth.RoleAdmin)(
+			http.HandlerFunc(admin.StatsHandler),
+		),
+	))
+	mux.Handle("GET /admin/users", auth.Middleware(
+		auth.RequireRole(auth.RoleAdmin)(
+			http.HandlerFunc(admin.ListUsersHandler),
+		),
+	))
+	mux.Handle("PATCH /admin/users/{id}/role", auth.Middleware(
+		auth.RequireRole(auth.RoleAdmin)(
+			http.HandlerFunc(admin.UpdateRoleHandler),
+		),
+	))
+	mux.Handle("PATCH /admin/users/{id}/active", auth.Middleware(
+		auth.RequireRole(auth.RoleAdmin)(
+			http.HandlerFunc(admin.ToggleActiveHandler),
+		),
+	))
+	mux.Handle("GET /admin/courses", auth.Middleware(
+		auth.RequireRole(auth.RoleAdmin)(
+			http.HandlerFunc(admin.ListCoursesHandler),
+		),
 	))
 
 	// Submissions

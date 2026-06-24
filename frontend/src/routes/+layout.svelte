@@ -39,6 +39,9 @@
 					<a href="/dashboard" class:active={$page.url.pathname.startsWith('/dashboard')}>Dashboard</a>
 					<a href="/courses"   class:active={$page.url.pathname.startsWith('/courses')}>Courses</a>
 					<a href="/sandbox"   class:active={$page.url.pathname.startsWith('/sandbox')}>Sandbox</a>
+					{#if auth.user?.role === 'admin'}
+						<a href="/admin" class:active={$page.url.pathname.startsWith('/admin')} class="admin-link">Admin</a>
+					{/if}
 				</div>
 
 				<div class="nav-right">
@@ -141,6 +144,9 @@
 	}
 	.nav-links a:hover { background: #f3f0ff; color: #7c3aed; text-decoration: none; }
 	.nav-links a.active { background: #ede9fe; color: #7c3aed; font-weight: 600; }
+	.nav-links a.admin-link { color: #b91c1c; }
+	.nav-links a.admin-link:hover { background: #fee2e2; color: #b91c1c; }
+	.nav-links a.admin-link.active { background: #fee2e2; color: #b91c1c; }
 
 	.nav-right {
 		display: flex;
