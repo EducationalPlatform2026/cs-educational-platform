@@ -50,6 +50,9 @@
 	let submissionHistory = $state<Submission[]>([]);
 	let showHistory       = $state(false);
 
+	// Quiz state
+	let selectedAnswers = $state<number[]>([]);
+
 	// Gamification
 	let showXpFloat = $state(false);
 	let xpAmount    = $state(100);
@@ -101,7 +104,7 @@
 			tcOrdinal = tc.length + 1;
 			submissionHistory = subs;
 			code = subs[0]?.code ?? ex.template_code ?? '';
-			submitLang = ex.language;
+			submitLang = ex.exercise_type === 'quiz' ? 'quiz' : (ex.language ?? 'python');
 			alreadySolved = userStore.isSolved(id);
 			if (subs.length > 0) {
 				latestDetail = await getSubmission(subs[0].id);
@@ -162,6 +165,30 @@
 			submitError = err instanceof Error ? err.message : 'Submission failed';
 		} finally { submitting = false; }
 	}
+
+	// Quiz exercises are graded immediately — no polling needed.
+	async function handleQuizSubmit() {
+		if (selectedAnswers.length === 0) return;
+		const code = JSON.stringify([...selectedAnswers].sort((a, b) => a - b));
+		submitError = ''; submitting = true; showXpFloat = false;
+		try {
+			const sub = await submitCode(id, code, 'quiz');
+			submissionHistory = [sub, ...submissionHistory];
+			const detail = await getSubmission(sub.id);
+			latestDetail = detail;
+			submissionHistory = [detail, ...submissionHistory.slice(1)];
+			if (detail.status === 'accepted' && !alreadySolved) {
+				xpAmount = xpReward;
+				userStore.addXP(xpAmount);
+				userStore.markSolved(id);
+				alreadySolved = true;
+				showXpFloat = true;
+				setTimeout(() => { showXpFloat = false; }, 2500);
+			}
+		} catch (err: unknown) {
+			submitError = err instanceof Error ? err.message : 'Submission failed';
+		} finally { submitting = false; }
+	}
 </script>
 
 <!-- XP float animation -->
@@ -209,8 +236,12 @@
 					<div class="badges-row">
 						<DifficultyDot difficulty={exercise.difficulty as 'easy'|'medium'|'hard'} />
 						<span class="badge {diffClass(exercise.difficulty)}">{exercise.difficulty}</span>
-						<span class="badge lang-badge">{exercise.language}</span>
-						<span class="badge neutral-badge">{Math.round(exercise.time_limit_ms / 1000)}s limit</span>
+						{#if exercise.exercise_type === 'quiz'}
+							<span class="badge quiz-badge">❓ Quiz</span>
+						{:else}
+							<span class="badge lang-badge">{exercise.language}</span>
+							<span class="badge neutral-badge">{Math.round(exercise.time_limit_ms / 1000)}s limit</span>
+						{/if}
 						<span class="xp-badge">⚡ +{xpReward} XP</span>
 					</div>
 				</div>
@@ -236,7 +267,8 @@
 					</div>
 				{/if}
 
-				<!-- Test cases -->
+				<!-- Test cases — hidden for quiz exercises -->
+				{#if exercise.exercise_type !== 'quiz'}
 				<div class="card">
 					<div class="tc-header">
 						<h2>Test cases ({testCases.length})</h2>
@@ -298,52 +330,119 @@
 						</div>
 					{/if}
 				</div>
+				{/if}
 			</div>
 
 			<!-- ══════ RIGHT PANE ══════ -->
 			<div class="pane-right">
-				<div class="editor-panel">
-					<!-- Language + header -->
-					<div class="editor-header">
-						<span class="editor-title">Your solution</span>
-						<select bind:value={submitLang} class="lang-select">
-							{#each ['python','go','java','c','cpp','javascript'] as l}
-								<option value={l}>{l}</option>
-							{/each}
-						</select>
-					</div>
-
-					<!-- Code editor -->
-					<form onsubmit={handleSubmit}>
-						<textarea
-							bind:value={code}
-							onkeydown={handleKeydown}
-							rows="16"
-							class="code-editor"
-							placeholder="Write your solution here…"
-							spellcheck="false"
-								></textarea>
-
-						{#if submitError}
-							<div class="alert" style="margin:0.75rem 0 0">{submitError}</div>
-						{/if}
-
-						<div class="submit-row">
-							<button type="submit" class="btn-submit" disabled={submitting || polling}>
-								{#if polling}
-									<span class="spinner"></span> Running…
-								{:else if submitting}
-									Submitting…
-								{:else}
-									▶ Submit
-								{/if}
-							</button>
+				{#if exercise.exercise_type === 'quiz'}
+					<!-- ── Quiz answer panel ── -->
+					<div class="quiz-panel">
+						<div class="quiz-panel-header">
+							<span class="quiz-panel-title">
+								{exercise.quiz_allow_multiple ? 'Select all correct answers' : 'Choose your answer'}
+							</span>
 							{#if alreadySolved}
-								<span class="solved-hint">✅ You solved this one!</span>
+								<span class="solved-badge">✓ Solved</span>
 							{/if}
 						</div>
-					</form>
-				</div>
+
+						<div class="quiz-options">
+							{#each exercise.quiz_options ?? [] as opt, i}
+								{@const isSelected = selectedAnswers.includes(i)}
+								<label class="quiz-opt-label" class:selected={isSelected}>
+									{#if exercise.quiz_allow_multiple}
+										<input
+											type="checkbox"
+											checked={isSelected}
+											onchange={(e) => {
+												if ((e.target as HTMLInputElement).checked) {
+													selectedAnswers = [...selectedAnswers, i].sort((a, b) => a - b);
+												} else {
+													selectedAnswers = selectedAnswers.filter((v) => v !== i);
+												}
+											}}
+											class="quiz-radio"
+										/>
+									{:else}
+										<input
+											type="radio"
+											name="quiz-answer"
+											value={i}
+											checked={isSelected}
+											onchange={() => (selectedAnswers = [i])}
+											class="quiz-radio"
+										/>
+									{/if}
+									<span class="opt-letter">{String.fromCharCode(65 + i)}</span>
+									<span class="opt-text">{opt}</span>
+								</label>
+							{/each}
+						</div>
+
+						{#if submitError}
+							<div class="alert" style="margin-top:0.75rem">{submitError}</div>
+						{/if}
+
+						<div class="quiz-submit-row">
+							<button
+								type="button"
+								class="btn-submit"
+								disabled={selectedAnswers.length === 0 || submitting}
+								onclick={handleQuizSubmit}
+							>
+								{submitting ? 'Submitting…' : '▶ Submit Answer'}
+							</button>
+							{#if alreadySolved}
+								<span class="solved-hint">✅ You got it!</span>
+							{/if}
+						</div>
+					</div>
+				{:else}
+					<!-- ── Code editor panel ── -->
+					<div class="editor-panel">
+						<!-- Language + header -->
+						<div class="editor-header">
+							<span class="editor-title">Your solution</span>
+							<select bind:value={submitLang} class="lang-select">
+								{#each ['python','go','java','c','cpp','javascript'] as l}
+									<option value={l}>{l}</option>
+								{/each}
+							</select>
+						</div>
+
+						<!-- Code editor -->
+						<form onsubmit={handleSubmit}>
+							<textarea
+								bind:value={code}
+								onkeydown={handleKeydown}
+								rows="16"
+								class="code-editor"
+								placeholder="Write your solution here…"
+								spellcheck="false"
+									></textarea>
+
+							{#if submitError}
+								<div class="alert" style="margin:0.75rem 0 0">{submitError}</div>
+							{/if}
+
+							<div class="submit-row">
+								<button type="submit" class="btn-submit" disabled={submitting || polling}>
+									{#if polling}
+										<span class="spinner"></span> Running…
+									{:else if submitting}
+										Submitting…
+									{:else}
+										▶ Submit
+									{/if}
+								</button>
+								{#if alreadySolved}
+									<span class="solved-hint">✅ You solved this one!</span>
+								{/if}
+							</div>
+						</form>
+					</div>
+				{/if}
 
 				<!-- Result panel -->
 				{#if latestDetail}
@@ -352,7 +451,11 @@
 						<div class="result-header">
 							<span class="result-status {meta.cls}">{meta.label}</span>
 							{#if latestDetail.status === 'accepted'}
-								<span class="result-score">{latestDetail.score}% — all tests passed!</span>
+								<span class="result-score">
+									{exercise?.exercise_type === 'quiz' ? 'Correct answer!' : `${latestDetail.score}% — all tests passed!`}
+								</span>
+							{:else if latestDetail.status === 'wrong_answer' && exercise?.exercise_type === 'quiz'}
+								<span class="result-score">Incorrect — try again!</span>
 							{:else if latestDetail.status !== 'pending' && latestDetail.status !== 'running'}
 								<span class="result-score">{latestDetail.score}%</span>
 							{/if}
@@ -373,8 +476,8 @@
 					</div>
 				{/if}
 
-				<!-- Submission history -->
-				{#if submissionHistory.length > 0}
+				<!-- Submission history — hidden for quiz exercises -->
+				{#if exercise.exercise_type !== 'quiz' && submissionHistory.length > 0}
 					<div class="history-card">
 						<button class="history-toggle" onclick={() => (showHistory = !showHistory)}>
 							<span>History ({submissionHistory.length})</span>
@@ -450,6 +553,7 @@
 	.diff-medium { background:#fef9c3; color:#a16207; }
 	.diff-hard   { background:#fee2e2; color:#b91c1c; }
 	.lang-badge  { background:#ede9fe; color:#5b21b6; }
+	.quiz-badge  { background:#fef3c7; color:#92400e; }
 	.neutral-badge { background:#f3f4f6; color:#374151; }
 	.draft-badge { background:#f3f4f6; color:#6b7280; }
 	.xp-badge {
@@ -493,6 +597,24 @@
 
 	/* ── Right pane ── */
 	.pane-right { display:flex; flex-direction:column; gap:0.85rem; position:sticky; top:70px; }
+
+	/* ── Quiz answer panel ── */
+	.quiz-panel { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:1.25rem; display:flex; flex-direction:column; gap:0.85rem; }
+	.quiz-panel-header { display:flex; align-items:center; justify-content:space-between; }
+	.quiz-panel-title { font-size:0.95rem; font-weight:600; color:#374151; }
+	.quiz-options { display:flex; flex-direction:column; gap:0.5rem; }
+	.quiz-opt-label {
+		display:flex; align-items:center; gap:0.75rem;
+		padding:0.7rem 0.9rem; border:2px solid #e5e7eb; border-radius:10px;
+		cursor:pointer; transition: all 0.15s; background:#fafafa;
+		font-size:0.9rem; color:#374151;
+	}
+	.quiz-opt-label:hover { border-color:#7c3aed; background:#f5f3ff; }
+	.quiz-opt-label.selected { border-color:#7c3aed; background:#f5f3ff; }
+	.quiz-radio { width:16px; height:16px; accent-color:#7c3aed; cursor:pointer; flex-shrink:0; }
+	.opt-letter { font-weight:700; color:#7c3aed; min-width:20px; flex-shrink:0; }
+	.opt-text { flex:1; }
+	.quiz-submit-row { display:flex; align-items:center; gap:0.75rem; padding-top:0.25rem; }
 
 	.editor-panel { background:#1e1e2e; border-radius:12px; overflow:hidden; border:1px solid #2a2a3e; }
 
