@@ -82,8 +82,8 @@
 	}
 
 	.auth-card {
-		background: #fff;
-		border: 1px solid #e5e7eb;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		padding: 2.5rem;
 		width: 100%;
@@ -95,10 +95,11 @@
 		font-size: 1.6rem;
 		font-weight: 700;
 		margin-bottom: 0.25rem;
+		color: var(--text);
 	}
 
 	.subtitle {
-		color: #6b7280;
+		color: var(--text-3);
 		font-size: 0.9rem;
 		margin-bottom: 1.75rem;
 	}
@@ -125,26 +126,28 @@
 		gap: 0.35rem;
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: #374151;
+		color: var(--text-2);
 	}
 
 	input {
 		padding: 0.6rem 0.85rem;
-		border: 1px solid #d1d5db;
+		border: 1px solid var(--border);
 		border-radius: 8px;
 		font-size: 0.95rem;
 		transition: border-color 0.15s;
 		outline: none;
+		background: var(--bg-input);
+		color: var(--text);
 	}
 
 	input:focus {
-		border-color: #4f46e5;
-		box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+		border-color: var(--primary);
+		box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
 	}
 
 	.btn-primary {
 		margin-top: 0.5rem;
-		background: #4f46e5;
+		background: var(--primary);
 		color: #fff;
 		border: none;
 		border-radius: 8px;
@@ -156,7 +159,7 @@
 	}
 
 	.btn-primary:hover:not(:disabled) {
-		background: #4338ca;
+		background: var(--primary-h);
 	}
 
 	.btn-primary:disabled {
@@ -168,6 +171,6 @@
 		margin-top: 1.25rem;
 		text-align: center;
 		font-size: 0.875rem;
-		color: #6b7280;
+		color: var(--text-3);
 	}
 </style>

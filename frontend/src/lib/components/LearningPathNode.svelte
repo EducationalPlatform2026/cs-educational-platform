@@ -49,17 +49,17 @@
 		line-height: 1;
 	}
 	.done {
-		background: #7c3aed;
+		background: var(--primary);
 		color: #fff;
 	}
 	.current {
-		background: #fff;
-		border: 2px solid #7c3aed;
-		color: #7c3aed;
+		background: var(--bg-card);
+		border: 2px solid var(--primary);
+		color: var(--primary);
 		animation: pulse-ring 2s ease-in-out infinite;
 	}
 	.locked {
-		background: #f3f0ff;
+		background: var(--primary-faint);
 		color: #a78bfa;
 		font-size: 0.65rem;
 		cursor: default;
@@ -68,9 +68,9 @@
 		transform: scale(1.12);
 		box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
 	}
-	.node-label { font-size: 0.875rem; font-weight: 500; color: #374151; }
-	.node-label.muted { color: #9ca3af; }
-	.node-sub { display: block; font-size: 0.72rem; color: #9ca3af; margin-top: 1px; }
+	.node-label { font-size: 0.875rem; font-weight: 500; color: var(--text-2); }
+	.node-label.muted { color: var(--text-4); }
+	.node-sub { display: block; font-size: 0.72rem; color: var(--text-4); margin-top: 1px; }
 
 	@keyframes pulse-ring {
 		0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.35); }

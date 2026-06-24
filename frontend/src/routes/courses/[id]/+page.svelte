@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { getCourse, getCourseMembers, enrollCourse, type Course, type Member } from '$lib/api/courses';
+	import { getCourse, getCourseMembers, enrollCourse, getCourseLeaderboard, type Course, type Member, type LeaderboardEntry } from '$lib/api/courses';
 	import { listExercises, deleteExercise, type Exercise } from '$lib/api/exercises';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { userStore } from '$lib/stores/userStore.svelte';
@@ -14,11 +14,13 @@
 	let course = $state<Course | null>(null);
 	let members = $state<Member[]>([]);
 	let exList = $state<Exercise[]>([]);
+	let leaderboard = $state<LeaderboardEntry[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let enrolling = $state(false);
 	let enrolled = $state(false);
 	let deletingEx = $state<Record<string, boolean>>({});
+	let activeTab = $state<'path' | 'leaderboard' | 'members'>('path');
 
 	const canManage = $derived(auth.user?.role === 'professor' || auth.user?.role === 'admin');
 	const canManageExercises = $derived(
@@ -54,15 +56,17 @@
 
 	onMount(async () => {
 		try {
-			const [c, m, ex] = await Promise.all([
+			const [c, m, ex, lb] = await Promise.all([
 				getCourse(id),
 				canSeeMembers ? getCourseMembers(id) : Promise.resolve([]),
-				listExercises(id)
+				listExercises(id),
+				getCourseLeaderboard(id)
 			]);
 			course = c;
 			enrolled = c.is_enrolled;
 			members = m;
 			exList = ex;
+			leaderboard = lb;
 		} catch (err: unknown) {
 			error = err instanceof Error ? err.message : 'Failed to load course';
 		} finally {
@@ -143,7 +147,7 @@
 						{/if}
 					{/if}
 					{#if canSeeMembers}
-						<a href="/courses/{course.id}/stats" class="btn-outline">📊 Stats</a>
+						<a href="/courses/{course.id}/stats" class="btn-outline">Stats</a>
 					{/if}
 					{#if canManage}
 						<a href="/courses/{course.id}/edit" class="btn-outline">Edit</a>
@@ -152,12 +156,26 @@
 			</div>
 		</div>
 
+		<!-- ── Tabs ──────────────────────── -->
+		<div class="tabs">
+			<button class="tab" class:active={activeTab === 'path'} onclick={() => (activeTab = 'path')}>
+				Learning path {#if canAccess}({exList.length}){/if}
+			</button>
+			<button class="tab" class:active={activeTab === 'leaderboard'} onclick={() => (activeTab = 'leaderboard')}>
+				Leaderboard
+			</button>
+			{#if canSeeMembers}
+				<button class="tab" class:active={activeTab === 'members'} onclick={() => (activeTab = 'members')}>
+					Members ({members.length})
+				</button>
+			{/if}
+		</div>
+
 		<!-- ── Learning path ──────────────── -->
+		{#if activeTab === 'path'}
 		<section class="section">
 			<div class="section-hd">
-				<h2>Learning path
-					{#if canAccess}({exList.length} exercises){/if}
-				</h2>
+				<h2>Learning path</h2>
 				{#if canManageExercises}
 					<a href="/courses/{id}/exercises/new" class="btn-sm">+ Add exercise</a>
 				{/if}
@@ -187,7 +205,7 @@
 							<LearningPathNode
 								state={canAccess ? nodeState(ex, i) : 'locked'}
 								label={ex.title}
-								sub="{ex.difficulty} · {ex.language} · +{xpFor(ex.difficulty)} XP"
+								sub="{ex.difficulty} · {ex.language ?? ex.exercise_type} · +{xpFor(ex.difficulty)} XP"
 								href={canAccess ? `/exercises/${ex.id}` : ''}
 							/>
 							{#if canManageExercises}
@@ -208,11 +226,47 @@
 				</div>
 			{/if}
 		</section>
+		{/if}
+
+		<!-- ── Leaderboard ────────────────── -->
+		{#if activeTab === 'leaderboard'}
+		<section class="section">
+			<h2>Course leaderboard</h2>
+			{#if leaderboard.length === 0}
+				<p class="empty-text">No students enrolled yet.</p>
+			{:else}
+				<div class="members-wrap">
+					<table class="members-table">
+						<thead>
+							<tr><th>#</th><th>Student</th><th>Exercises solved</th></tr>
+						</thead>
+						<tbody>
+							{#each leaderboard as e (e.user_id)}
+								<tr class:top-row={e.rank <= 3}>
+									<td class="rank-cell">
+										{#if e.rank === 1}<span class="medal gold">1</span>
+										{:else if e.rank === 2}<span class="medal silver">2</span>
+										{:else if e.rank === 3}<span class="medal bronze">3</span>
+										{:else}<span class="rank-num">{e.rank}</span>{/if}
+									</td>
+									<td>{e.first_name} {e.last_name}</td>
+									<td><span class="solved-pill">{e.solved_count}</span></td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</section>
+		{/if}
 
 		<!-- ── Members (privileged) ─────── -->
-		{#if canSeeMembers && members.length > 0}
-			<section class="section">
-				<h2>Enrolled members ({members.length})</h2>
+		{#if activeTab === 'members' && canSeeMembers}
+		<section class="section">
+			<h2>Enrolled members ({members.length})</h2>
+			{#if members.length === 0}
+				<p class="empty-text">No members yet.</p>
+			{:else}
 				<div class="members-wrap">
 					<table class="members-table">
 						<thead>
@@ -229,7 +283,8 @@
 						</tbody>
 					</table>
 				</div>
-			</section>
+			{/if}
+		</section>
 		{/if}
 	{/if}
 </div>
@@ -237,43 +292,67 @@
 <style>
 	.page { max-width: 860px; }
 
-	.back-link { display:inline-block; font-size:0.875rem; color:#6b7280; margin-bottom:1.5rem; }
-	.back-link:hover { color:#7c3aed; }
+	.back-link { display:inline-block; font-size:0.875rem; color:var(--text-3); margin-bottom:1.5rem; }
+	.back-link:hover { color:var(--primary); }
 
-	.skeleton-header { height:120px; border-radius:14px; background:linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%); background-size:200% 100%; animation:shimmer 1.4s infinite; }
+	.skeleton-header { height:120px; border-radius:14px; background:linear-gradient(90deg,var(--border) 25%,var(--border-light) 50%,var(--border) 75%); background-size:200% 100%; animation:shimmer 1.4s infinite; }
 	@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
 	.alert { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:8px; padding:0.75rem 1rem; font-size:0.9rem; }
 
 	/* ── Hero ── */
 	.course-hero {
-		background: #fff;
-		border: 1px solid #e5e7eb;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
 		border-radius: 14px;
 		overflow: hidden;
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
 	}
 	.hero-strip { height: 6px; }
 	.hero-body { padding: 1.5rem; }
 	.hero-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
 	.hero-title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
-	h1 { font-size: 1.65rem; font-weight: 700; line-height: 1.3; }
+	h1 { font-size: 1.65rem; font-weight: 700; line-height: 1.3; color: var(--text); }
 	.badge-draft { background:#fef9c3; color:#a16207; font-size:0.7rem; font-weight:700; padding:2px 7px; border-radius:99px; }
-	.hero-desc { color:#6b7280; font-size:0.9rem; line-height:1.6; margin-bottom:0.4rem; }
-	.hero-meta { color:#9ca3af; font-size:0.82rem; }
+	.hero-desc { color:var(--text-3); font-size:0.9rem; line-height:1.6; margin-bottom:0.4rem; }
+	.hero-meta { color:var(--text-4); font-size:0.82rem; }
 
 	.progress-wrap { display:flex; align-items:center; gap:0.75rem; flex-shrink:0; }
 	.progress-label { display:flex; flex-direction:column; }
-	.prog-num { font-size:1rem; font-weight:700; color:#7c3aed; }
-	.prog-sub { font-size:0.72rem; color:#9ca3af; }
+	.prog-num { font-size:1rem; font-weight:700; color:var(--primary); }
+	.prog-sub { font-size:0.72rem; color:var(--text-4); }
 
 	.hero-actions { display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; }
 	.enrolled-badge { font-size:0.9rem; color:#16a34a; font-weight:600; }
 
+	/* ── Tabs ── */
+	.tabs {
+		display: flex;
+		gap: 0.25rem;
+		border-bottom: 2px solid var(--border);
+		margin-bottom: 1.5rem;
+	}
+	.tab {
+		background: none;
+		border: none;
+		border-bottom: 2px solid transparent;
+		margin-bottom: -2px;
+		padding: 0.55rem 1rem;
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: var(--text-3);
+		cursor: pointer;
+		font-family: inherit;
+		transition: all 0.15s;
+		border-radius: 6px 6px 0 0;
+	}
+	.tab:hover { color: var(--primary); background: var(--primary-faint); }
+	.tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+
 	/* ── Section ── */
 	.section { margin-bottom:2.5rem; }
 	.section-hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; }
-	h2 { font-size:1.1rem; font-weight:600; }
+	h2 { font-size:1.1rem; font-weight:600; color: var(--text); }
 
 	/* ── Learning path ── */
 	.path { display:flex; flex-direction:column; }
@@ -282,19 +361,18 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		padding: 6px 0;
-		background: #fff;
-		border: 1px solid #e5e7eb;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
 		border-radius: 10px;
 		padding: 0.75rem 1rem;
 	}
-	.path-step:hover { border-color: #ddd6fe; background: #faf8ff; }
+	.path-step:hover { border-color: var(--primary-bg); background: var(--primary-faint); }
 
 	.path-connector {
 		margin-left: 15px;
 		width: 2px;
 		height: 16px;
-		background: repeating-linear-gradient(to bottom, #ddd6fe, #ddd6fe 4px, transparent 4px, transparent 8px);
+		background: repeating-linear-gradient(to bottom, var(--primary-bg), var(--primary-bg) 4px, transparent 4px, transparent 8px);
 	}
 	.path-connector.done {
 		background: repeating-linear-gradient(to bottom, #a78bfa, #a78bfa 4px, transparent 4px, transparent 8px);
@@ -306,35 +384,62 @@
 	.enroll-gate {
 		display:flex; flex-direction:column; align-items:center;
 		gap:0.75rem; padding:3rem 2rem;
-		border:2px dashed #ddd6fe; border-radius:14px;
-		text-align:center; background:#faf8ff;
+		border:2px dashed var(--primary-bg); border-radius:14px;
+		text-align:center; background:var(--primary-faint);
 	}
 	.gate-icon { font-size:2.5rem; line-height:1; }
-	.gate-title { font-size:1.1rem; font-weight:600; color:#374151; }
-	.gate-sub { font-size:0.875rem; color:#6b7280; max-width:380px; }
+	.gate-title { font-size:1.1rem; font-weight:600; color:var(--text-2); }
+	.gate-sub { font-size:0.875rem; color:var(--text-3); max-width:380px; }
 
-	/* ── Members ── */
-	.members-wrap { overflow-x:auto; border:1px solid #e5e7eb; border-radius:10px; }
+	/* ── Members / Leaderboard table ── */
+	.members-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:10px; }
 	.members-table { width:100%; border-collapse:collapse; font-size:0.875rem; }
-	.members-table th { text-align:left; padding:0.65rem 1rem; font-size:0.75rem; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.04em; background:#f9fafb; border-bottom:1px solid #e5e7eb; }
-	.members-table td { padding:0.75rem 1rem; border-bottom:1px solid #f3f4f6; color:#374151; }
+	.members-table th { text-align:left; padding:0.65rem 1rem; font-size:0.75rem; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:0.04em; background:var(--bg-surface); border-bottom:1px solid var(--border); }
+	.members-table td { padding:0.75rem 1rem; border-bottom:1px solid var(--border-light); color:var(--text-2); }
 	.members-table tr:last-child td { border-bottom:none; }
-	.role-badge { background:#ede9fe; color:#7c3aed; font-size:0.75rem; font-weight:600; padding:2px 8px; border-radius:99px; text-transform:capitalize; }
+	.role-badge { background:var(--primary-bg); color:var(--primary); font-size:0.75rem; font-weight:600; padding:2px 8px; border-radius:99px; text-transform:capitalize; }
+
+	/* ── Leaderboard extras ── */
+	.top-row td { font-weight: 600; }
+	.rank-cell { width: 48px; }
+	.rank-num { color: var(--text-4); font-size: 0.85rem; }
+	.medal {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		font-size: 0.78rem;
+		font-weight: 800;
+		color: #fff;
+	}
+	.medal.gold   { background: #f59e0b; }
+	.medal.silver { background: #9ca3af; }
+	.medal.bronze { background: #cd7f32; }
+	.solved-pill {
+		background: var(--primary-faint);
+		color: var(--primary);
+		font-size: 0.78rem;
+		font-weight: 700;
+		padding: 2px 10px;
+		border-radius: 99px;
+	}
 
 	/* ── Buttons ── */
-	.btn-primary { background:#7c3aed; color:#fff; border:none; border-radius:8px; padding:0.55rem 1.1rem; font-size:0.9rem; font-weight:600; cursor:pointer; transition:background 0.15s; font-family:inherit; }
-	.btn-primary:hover:not(:disabled) { background:#6d28d9; }
+	.btn-primary { background:var(--primary); color:#fff; border:none; border-radius:8px; padding:0.55rem 1.1rem; font-size:0.9rem; font-weight:600; cursor:pointer; transition:background 0.15s; font-family:inherit; }
+	.btn-primary:hover:not(:disabled) { background:var(--primary-h); }
 	.btn-primary:disabled { opacity:0.6; cursor:not-allowed; }
-	.btn-outline { background:transparent; color:#374151; border:1px solid #d1d5db; border-radius:8px; padding:0.5rem 1rem; font-size:0.875rem; font-weight:500; cursor:pointer; text-decoration:none; transition:all 0.15s; font-family:inherit; }
-	.btn-outline:hover { background:#f9fafb; text-decoration:none; }
-	.btn-sm { background:#7c3aed; color:#fff; border:none; border-radius:7px; padding:5px 12px; font-size:0.82rem; font-weight:600; cursor:pointer; text-decoration:none; }
-	.btn-sm:hover { background:#6d28d9; text-decoration:none; }
+	.btn-outline { background:transparent; color:var(--text-2); border:1px solid var(--border); border-radius:8px; padding:0.5rem 1rem; font-size:0.875rem; font-weight:500; cursor:pointer; text-decoration:none; transition:all 0.15s; font-family:inherit; }
+	.btn-outline:hover { background:var(--bg-surface); text-decoration:none; }
+	.btn-sm { background:var(--primary); color:#fff; border:none; border-radius:7px; padding:5px 12px; font-size:0.82rem; font-weight:600; cursor:pointer; text-decoration:none; }
+	.btn-sm:hover { background:var(--primary-h); text-decoration:none; }
 	.btn-xs { font-size:0.78rem; font-weight:600; padding:3px 9px; border-radius:5px; border:none; cursor:pointer; text-decoration:none; display:inline-block; font-family:inherit; }
-	.btn-xs.btn-outline { background:transparent; color:#374151; border:1px solid #d1d5db; }
-	.btn-xs.btn-outline:hover { background:#f9fafb; }
+	.btn-xs.btn-outline { background:transparent; color:var(--text-2); border:1px solid var(--border); }
+	.btn-xs.btn-outline:hover { background:var(--bg-surface); }
 	.btn-xs.btn-danger { background:#ef4444; color:#fff; }
 	.btn-xs.btn-danger:hover:not(:disabled) { background:#dc2626; }
 	.btn-xs:disabled { opacity:0.5; cursor:not-allowed; }
 
-	.empty-text { color:#6b7280; font-size:0.9rem; }
+	.empty-text { color:var(--text-3); font-size:0.9rem; }
 </style>

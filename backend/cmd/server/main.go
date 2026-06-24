@@ -99,6 +99,9 @@ func main() {
 			http.HandlerFunc(courses.MembersHandler),
 		),
 	))
+	mux.Handle("GET /courses/{id}/leaderboard", auth.Middleware(
+		http.HandlerFunc(courses.LeaderboardHandler),
+	))
 
 	// Exercises
 	mux.Handle("GET /courses/{id}/exercises", auth.Middleware(

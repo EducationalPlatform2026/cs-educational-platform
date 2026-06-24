@@ -284,6 +284,55 @@ func EnrollHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// LeaderboardHandler GET /courses/{id}/leaderboard
+// Returns enrolled students ranked by the number of accepted exercises.
+func LeaderboardHandler(w http.ResponseWriter, r *http.Request) {
+	courseID := r.PathValue("id")
+
+	rows, err := db.Pool.Query(r.Context(),
+		`SELECT u.id, u.first_name, u.last_name,
+		        COUNT(DISTINCT s.exercise_id) AS solved_count
+		 FROM users u
+		 JOIN course_enrollments ce ON ce.user_id = u.id
+		                           AND ce.course_id = $1
+		                           AND ce.role = 'student'
+		 LEFT JOIN submissions s ON s.user_id = u.id
+		                        AND s.status = 'accepted'
+		                        AND s.exercise_id IN (
+		                            SELECT id FROM exercises
+		                            WHERE course_id = $1 AND is_published = true
+		                        )
+		 GROUP BY u.id, u.first_name, u.last_name
+		 ORDER BY solved_count DESC, u.first_name ASC
+		 LIMIT 100`,
+		courseID,
+	)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	entries := make([]LeaderboardEntry, 0)
+	rank := 1
+	for rows.Next() {
+		var e LeaderboardEntry
+		if err := rows.Scan(&e.UserID, &e.FirstName, &e.LastName, &e.SolvedCount); err != nil {
+			httputil.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		e.Rank = rank
+		rank++
+		entries = append(entries, e)
+	}
+	if rows.Err() != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, entries)
+}
+
 // MembersHandler GET /courses/{id}/members  [professor, teaching_assistant, admin]
 // Uses a single LEFT JOIN to detect course-not-found vs empty-enrollment in one query.
 func MembersHandler(w http.ResponseWriter, r *http.Request) {

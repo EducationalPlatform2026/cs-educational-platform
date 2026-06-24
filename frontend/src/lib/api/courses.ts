@@ -19,6 +19,14 @@ export interface Member {
 	enrolled_at: string;
 }
 
+export interface LeaderboardEntry {
+	rank: number;
+	user_id: string;
+	first_name: string;
+	last_name: string;
+	solved_count: number;
+}
+
 export function listCourses(): Promise<Course[]> {
 	return apiFetch('/courses');
 }
@@ -55,4 +63,8 @@ export function enrollCourse(id: string, role?: string): Promise<void> {
 
 export function getCourseMembers(id: string): Promise<Member[]> {
 	return apiFetch(`/courses/${id}/members`);
+}
+
+export function getCourseLeaderboard(id: string): Promise<LeaderboardEntry[]> {
+	return apiFetch(`/courses/${id}/leaderboard`);
 }

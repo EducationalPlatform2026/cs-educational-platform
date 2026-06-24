@@ -119,7 +119,7 @@
 				class:active={exerciseType === 'coding'}
 				onclick={() => (exerciseType = 'coding')}
 			>
-				💻 Coding problem
+				Coding problem
 			</button>
 			<button
 				type="button"
@@ -127,7 +127,7 @@
 				class:active={exerciseType === 'quiz'}
 				onclick={() => (exerciseType = 'quiz')}
 			>
-				❓ Quiz
+				Quiz
 			</button>
 		</div>
 	</div>
@@ -279,7 +279,7 @@
 	.toggle-label {
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: #374151;
+		color: var(--text-2);
 	}
 	.toggle-btns {
 		display: flex;
@@ -287,21 +287,21 @@
 	}
 	.toggle-btn {
 		padding: 0.5rem 1rem;
-		border: 2px solid #d1d5db;
+		border: 2px solid var(--border);
 		border-radius: 8px;
-		background: #fff;
+		background: var(--bg-input);
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: #374151;
+		color: var(--text-2);
 		cursor: pointer;
 		transition: all 0.15s;
 		font-family: inherit;
 	}
-	.toggle-btn:hover { border-color: #7c3aed; color: #7c3aed; }
+	.toggle-btn:hover { border-color: var(--primary); color: var(--primary); }
 	.toggle-btn.active {
-		border-color: #7c3aed;
-		background: #f5f3ff;
-		color: #7c3aed;
+		border-color: var(--primary);
+		background: var(--primary-faint);
+		color: var(--primary);
 	}
 
 	label {
@@ -310,7 +310,7 @@
 		gap: 0.35rem;
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: #374151;
+		color: var(--text-2);
 	}
 
 	.row {
@@ -323,11 +323,12 @@
 	select,
 	textarea {
 		padding: 0.6rem 0.85rem;
-		border: 1px solid #d1d5db;
+		border: 1px solid var(--border);
 		border-radius: 8px;
 		font-size: 0.9rem;
 		outline: none;
-		background: #fff;
+		background: var(--bg-input);
+		color: var(--text);
 		resize: vertical;
 		font-family: inherit;
 		transition: border-color 0.15s;
@@ -336,7 +337,7 @@
 	input:focus,
 	select:focus,
 	textarea:focus {
-		border-color: #7c3aed;
+		border-color: var(--primary);
 		box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
 	}
 
@@ -345,10 +346,10 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
-		border: 1px solid #e5e7eb;
+		border: 1px solid var(--border);
 		border-radius: 10px;
 		padding: 1rem;
-		background: #fafafa;
+		background: var(--bg-surface);
 	}
 	.quiz-header {
 		display: flex;
@@ -356,8 +357,8 @@
 		gap: 0.2rem;
 		margin-bottom: 0.25rem;
 	}
-	.quiz-section-label { font-size: 0.875rem; font-weight: 500; color: #374151; }
-	.quiz-hint { font-size: 0.78rem; color: #9ca3af; }
+	.quiz-section-label { font-size: 0.875rem; font-weight: 500; color: var(--text-2); }
+	.quiz-hint { font-size: 0.78rem; color: var(--text-4); }
 	.quiz-option-row {
 		display: flex;
 		align-items: center;
@@ -369,7 +370,7 @@
 		width: 20px;
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: #6b7280;
+		color: var(--text-3);
 	}
 	.option-input {
 		flex: 1;
@@ -392,16 +393,16 @@
 	.add-option-btn {
 		align-self: flex-start;
 		background: none;
-		border: 1px dashed #d1d5db;
+		border: 1px dashed var(--border);
 		border-radius: 6px;
 		padding: 0.4rem 0.85rem;
 		font-size: 0.82rem;
-		color: #6b7280;
+		color: var(--text-3);
 		cursor: pointer;
 		font-family: inherit;
 		transition: all 0.15s;
 	}
-	.add-option-btn:hover { border-color: #7c3aed; color: #7c3aed; }
+	.add-option-btn:hover { border-color: var(--primary); color: var(--primary); }
 
 	.multiple-toggle {
 		display: flex !important;
@@ -409,10 +410,10 @@
 		align-items: center;
 		gap: 0.5rem !important;
 		font-size: 0.82rem !important;
-		color: #6b7280;
+		color: var(--text-3);
 		font-weight: 400 !important;
 		padding-top: 0.25rem;
-		border-top: 1px solid #e5e7eb;
+		border-top: 1px solid var(--border);
 		margin-top: 0.25rem;
 	}
 
@@ -429,7 +430,7 @@
 	}
 
 	.btn-primary {
-		background: #7c3aed;
+		background: var(--primary);
 		color: #fff;
 		border: none;
 		border-radius: 8px;
@@ -441,9 +442,9 @@
 		font-family: inherit;
 	}
 
-	.btn-primary:hover:not(:disabled) { background: #6d28d9; }
+	.btn-primary:hover:not(:disabled) { background: var(--primary-h); }
 	.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
 	.req  { color: #ef4444; }
-	.hint { color: #9ca3af; font-weight: 400; font-size: 0.8rem; }
+	.hint { color: var(--text-4); font-weight: 400; font-size: 0.8rem; }
 </style>

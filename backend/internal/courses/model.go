@@ -41,3 +41,12 @@ type updateRequest struct {
 type enrollRequest struct {
 	Role string `json:"role"` // auth.RoleStudent or auth.RoleTeachingAssistant; defaults to RoleStudent
 }
+
+// LeaderboardEntry is one row in the course leaderboard response.
+type LeaderboardEntry struct {
+	Rank        int    `json:"rank"`
+	UserID      string `json:"user_id"`
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	SolvedCount int    `json:"solved_count"`
+}

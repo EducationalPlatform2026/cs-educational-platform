@@ -81,7 +81,7 @@
 		</div>
 		<div class="header-actions">
 			<button class="btn-save" onclick={saveSnippet} class:saved>
-				{saved ? '✓ Saved' : '💾 Save'}
+				{saved ? '✓ Saved' : 'Save'}
 			</button>
 			<button class="btn-clear" onclick={clearAll}>Clear</button>
 		</div>
@@ -89,7 +89,6 @@
 
 	<!-- Info banner -->
 	<div class="info-banner">
-		<span class="info-icon">💡</span>
 		<span>Sandbox saves your code locally. To run code against test cases, <a href="/courses">open an exercise</a> from any course.</span>
 	</div>
 
@@ -98,7 +97,7 @@
 		<!-- Left: notes -->
 		<div class="pane pane-notes">
 			<div class="pane-header">
-				<span class="pane-title">📝 Notes</span>
+				<span class="pane-title">Notes</span>
 				<span class="pane-hint">Plan your approach, pseudocode, ideas</span>
 			</div>
 			<textarea
@@ -112,7 +111,7 @@
 		<!-- Right: code editor -->
 		<div class="pane pane-code">
 			<div class="pane-header">
-				<span class="pane-title">⌨️ Code Editor</span>
+				<span class="pane-title">Code Editor</span>
 				<select bind:value={language} class="lang-select">
 					{#each LANGS as l}
 						<option value={l}>{l}</option>
@@ -137,14 +136,8 @@
 	<div class="quick-links">
 		<p class="ql-title">Ready to solve some problems?</p>
 		<div class="ql-row">
-			<a href="/courses" class="ql-card">
-				<span class="ql-icon">📚</span>
-				<span class="ql-label">Browse Courses</span>
-			</a>
-			<a href="/dashboard" class="ql-card">
-				<span class="ql-icon">📊</span>
-				<span class="ql-label">My Dashboard</span>
-			</a>
+			<a href="/courses" class="ql-card">Browse Courses →</a>
+		<a href="/dashboard" class="ql-card">My Dashboard →</a>
 		</div>
 	</div>
 </div>
@@ -160,14 +153,14 @@
 		gap: 1rem;
 	}
 
-	h1 { font-size: 1.75rem; font-weight: 700; }
+	h1 { font-size: 1.75rem; font-weight: 700; color: var(--text); }
 
-	.sub { color: #6b7280; font-size: 0.875rem; margin-top: 0.2rem; }
+	.sub { color: var(--text-3); font-size: 0.875rem; margin-top: 0.2rem; }
 
 	.header-actions { display: flex; gap: 0.5rem; align-items: center; }
 
 	.btn-save {
-		background: #7c3aed;
+		background: var(--primary);
 		color: #fff;
 		border: none;
 		border-radius: 8px;
@@ -178,34 +171,34 @@
 		transition: all 0.15s;
 		font-family: inherit;
 	}
-	.btn-save:hover { background: #6d28d9; }
+	.btn-save:hover { background: var(--primary-h); }
 	.btn-save.saved { background: #16a34a; }
 
 	.btn-clear {
 		background: transparent;
-		border: 1px solid #e5e7eb;
-		color: #6b7280;
+		border: 1px solid var(--border);
+		color: var(--text-3);
 		border-radius: 8px;
 		padding: 0.5rem 1rem;
 		font-size: 0.875rem;
 		cursor: pointer;
 		font-family: inherit;
 	}
-	.btn-clear:hover { border-color: #d1d5db; color: #374151; }
+	.btn-clear:hover { border-color: var(--border); color: var(--text-2); }
 
 	.info-banner {
-		background: #ede9fe;
-		border: 1px solid #ddd6fe;
+		background: var(--primary-bg);
+		border: 1px solid var(--primary-faint);
 		border-radius: 10px;
 		padding: 0.7rem 1rem;
 		font-size: 0.875rem;
-		color: #5b21b6;
+		color: var(--primary);
 		display: flex;
 		align-items: center;
 		gap: 0.6rem;
 		margin-bottom: 1.25rem;
 	}
-	.info-banner a { color: #7c3aed; font-weight: 600; }
+	.info-banner a { color: var(--primary); font-weight: 600; }
 
 	.split {
 		display: grid;
@@ -215,8 +208,8 @@
 	}
 
 	.pane {
-		background: #fff;
-		border: 1px solid #e5e7eb;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		display: flex;
 		flex-direction: column;
@@ -228,21 +221,21 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0.75rem 1rem;
-		border-bottom: 1px solid #f3f4f6;
-		background: #fafafa;
+		border-bottom: 1px solid var(--border-light);
+		background: var(--bg-surface);
 	}
 
-	.pane-title { font-size: 0.875rem; font-weight: 600; color: #374151; }
+	.pane-title { font-size: 0.875rem; font-weight: 600; color: var(--text-2); }
 
-	.pane-hint { font-size: 0.78rem; color: #9ca3af; }
+	.pane-hint { font-size: 0.78rem; color: var(--text-4); }
 
 	.lang-select {
 		padding: 3px 8px;
-		border: 1px solid #e5e7eb;
+		border: 1px solid var(--border);
 		border-radius: 6px;
 		font-size: 0.82rem;
-		color: #374151;
-		background: #fff;
+		color: var(--text-2);
+		background: var(--bg-input);
 		outline: none;
 		cursor: pointer;
 	}
@@ -256,10 +249,10 @@
 		font-size: 0.875rem;
 		line-height: 1.7;
 		font-family: inherit;
-		color: #374151;
+		color: var(--text);
 		resize: none;
 		outline: none;
-		background: #fff;
+		background: var(--bg-card);
 	}
 
 	.code-editor {
@@ -297,8 +290,8 @@
 	.cta-link:hover { text-decoration: underline; }
 
 	.quick-links {
-		background: #fff;
-		border: 1px solid #e5e7eb;
+		background: var(--bg-card);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		padding: 1.25rem;
 	}
@@ -306,7 +299,7 @@
 	.ql-title {
 		font-size: 0.9rem;
 		font-weight: 600;
-		color: #374151;
+		color: var(--text-2);
 		margin-bottom: 0.85rem;
 	}
 
@@ -317,18 +310,16 @@
 		align-items: center;
 		gap: 0.6rem;
 		padding: 0.65rem 1.1rem;
-		background: #faf8ff;
-		border: 1px solid #ddd6fe;
+		background: var(--primary-faint);
+		border: 1px solid var(--primary-bg);
 		border-radius: 10px;
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: #7c3aed;
+		color: var(--primary);
 		text-decoration: none;
 		transition: all 0.15s;
 	}
-	.ql-card:hover { background: #ede9fe; text-decoration: none; }
-
-	.ql-icon { font-size: 1.1rem; }
+	.ql-card:hover { background: var(--primary-bg); text-decoration: none; }
 
 	@media (max-width: 700px) {
 		.split { grid-template-columns: 1fr; }
