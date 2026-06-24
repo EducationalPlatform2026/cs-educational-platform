@@ -20,7 +20,7 @@
 				first_name: res.first_name,
 				last_name: res.last_name
 			});
-			goto('/courses');
+			goto('/dashboard');
 		} catch (err: unknown) {
 			error = err instanceof Error ? err.message : 'Login failed';
 		} finally {

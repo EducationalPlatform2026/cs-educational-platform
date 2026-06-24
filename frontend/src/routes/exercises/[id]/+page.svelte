@@ -23,7 +23,9 @@
 	let error       = $state('');
 	let notEnrolled = $state(false);
 
-	const canManage = $derived(auth.user?.role === 'professor' || auth.user?.role === 'admin');
+	const canManage = $derived(
+		auth.user?.role === 'professor' || auth.user?.role === 'teaching_assistant' || auth.user?.role === 'admin'
+	);
 	const canSeeAll = $derived(
 		auth.user?.role === 'professor' || auth.user?.role === 'teaching_assistant' || auth.user?.role === 'admin'
 	);
@@ -250,7 +252,7 @@
 							{#if tcError}<div class="alert">{tcError}</div>{/if}
 							<form onsubmit={handleAddTestCase}>
 								<label>Input <textarea bind:value={tcInput} rows="2" placeholder="(empty for no stdin)"></textarea></label>
-								<label>Expected output <span class="req">*</span> <textarea bind:value={tcExpected} rows="2" required></textarea></label>
+								<label><span>Expected output <span class="req">*</span></span><textarea bind:value={tcExpected} rows="2" required></textarea></label>
 								<div class="row-inline">
 									<label class="inline-lbl"><input type="checkbox" bind:checked={tcHidden} /> Hidden</label>
 									<label class="inline-lbl">Order <input type="number" bind:value={tcOrdinal} min="1" style="width:60px" /></label>

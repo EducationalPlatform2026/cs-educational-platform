@@ -104,7 +104,7 @@ func main() {
 		http.HandlerFunc(exercises.ListHandler),
 	))
 	mux.Handle("POST /courses/{id}/exercises", auth.Middleware(
-		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.CreateHandler),
 		),
 	))
@@ -112,12 +112,12 @@ func main() {
 		http.HandlerFunc(exercises.GetHandler),
 	))
 	mux.Handle("PUT /exercises/{id}", auth.Middleware(
-		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.UpdateHandler),
 		),
 	))
 	mux.Handle("DELETE /exercises/{id}", auth.Middleware(
-		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.DeleteHandler),
 		),
 	))
@@ -127,17 +127,17 @@ func main() {
 		http.HandlerFunc(exercises.ListTestCasesHandler),
 	))
 	mux.Handle("POST /exercises/{id}/test-cases", auth.Middleware(
-		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.CreateTestCaseHandler),
 		),
 	))
 	mux.Handle("PUT /test-cases/{id}", auth.Middleware(
-		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.UpdateTestCaseHandler),
 		),
 	))
 	mux.Handle("DELETE /test-cases/{id}", auth.Middleware(
-		auth.RequireRole(auth.RoleProfessor, auth.RoleAdmin)(
+		auth.RequireRole(auth.RoleProfessor, auth.RoleTeachingAssistant, auth.RoleAdmin)(
 			http.HandlerFunc(exercises.DeleteTestCaseHandler),
 		),
 	))
