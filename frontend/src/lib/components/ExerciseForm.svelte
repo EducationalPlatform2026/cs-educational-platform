@@ -60,7 +60,7 @@
 
 <form onsubmit={handleSubmit}>
 	<label>
-		Title <span class="req">*</span>
+		<span>Title <span class="req">*</span></span>
 		<input bind:value={title} placeholder="Binary Search" required />
 	</label>
 
@@ -70,7 +70,7 @@
 	</label>
 
 	<label>
-		Instructions <span class="req">*</span>
+		<span>Instructions <span class="req">*</span></span>
 		<textarea bind:value={instructions} rows="6" placeholder="Describe the problem, constraints, and examples…" required></textarea>
 	</label>
 
@@ -85,7 +85,7 @@
 		</label>
 
 		<label>
-			Language <span class="req">*</span>
+			<span>Language <span class="req">*</span></span>
 			<select bind:value={language}>
 				{#each languages as l}
 					<option value={l}>{l}</option>

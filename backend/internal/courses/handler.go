@@ -51,7 +51,12 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	query := `SELECT ` + courseFields + `,
 		EXISTS(SELECT 1 FROM course_enrollments WHERE course_id = c.id AND user_id = $1) AS is_enrolled
 		FROM courses c`
-	if role != auth.RoleProfessor && role != auth.RoleAdmin {
+	switch role {
+	case auth.RoleProfessor:
+		query += ` WHERE c.created_by = $1`
+	case auth.RoleAdmin:
+		// admins see every course, no WHERE needed
+	default:
 		query += ` WHERE c.is_published = true`
 	}
 	query += ` ORDER BY c.created_at DESC LIMIT 200`
@@ -228,14 +233,20 @@ func EnrollHandler(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserIDFromCtx(r.Context())
 
 	var req enrollRequest
-	// Body is optional — a missing body enrolls as student by default.
-	// Only reject genuinely malformed JSON, not an empty body (io.EOF).
+	// Body is optional — only reject genuinely malformed JSON, not an empty body (io.EOF).
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		httputil.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
+	// Default to the caller's own user role so a TA enrolling without a body
+	// gets enrollment_role=teaching_assistant rather than student.
 	if req.Role == "" {
-		req.Role = auth.RoleStudent
+		callerRole := auth.RoleFromCtx(r.Context())
+		if callerRole == auth.RoleTeachingAssistant {
+			req.Role = auth.RoleTeachingAssistant
+		} else {
+			req.Role = auth.RoleStudent
+		}
 	}
 	if req.Role != auth.RoleStudent && req.Role != auth.RoleTeachingAssistant {
 		httputil.Error(w, "role must be student or teaching_assistant", http.StatusBadRequest)

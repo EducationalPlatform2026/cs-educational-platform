@@ -100,7 +100,7 @@
 			<h2>New course</h2>
 			{#if formError}<div class="alert">{formError}</div>{/if}
 			<form onsubmit={handleCreate}>
-				<label>Title <span class="req">*</span>
+				<label><span>Title <span class="req">*</span></span>
 					<input bind:value={newTitle} placeholder="Introduction to Algorithms" required />
 				</label>
 				<label>Description

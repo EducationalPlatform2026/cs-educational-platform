@@ -71,7 +71,7 @@
 
 			<form onsubmit={handleSubmit}>
 				<label>
-					Title <span class="req">*</span>
+					<span>Title <span class="req">*</span></span>
 					<input bind:value={title} placeholder="Course title" required />
 				</label>
 

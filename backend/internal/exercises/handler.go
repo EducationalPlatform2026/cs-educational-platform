@@ -17,24 +17,38 @@ const exerciseFields = `id, course_id, created_by, title, description, instructi
 	difficulty, language, template_code, time_limit_ms, memory_limit_kb, is_published,
 	created_at, updated_at`
 
-// exerciseOwner returns the created_by UUID. Returns pgx.ErrNoRows if not found.
-func exerciseOwner(ctx context.Context, id string) (string, error) {
-	var owner string
-	err := db.Pool.QueryRow(ctx, `SELECT created_by FROM exercises WHERE id = $1`, id).Scan(&owner)
-	return owner, err
+// exerciseCourseAndOwner returns the course_id and created_by for an exercise.
+// Returns pgx.ErrNoRows if not found.
+func exerciseCourseAndOwner(ctx context.Context, id string) (courseID, ownerID string, err error) {
+	err = db.Pool.QueryRow(ctx,
+		`SELECT course_id, created_by FROM exercises WHERE id = $1`, id,
+	).Scan(&courseID, &ownerID)
+	return
 }
 
-// testCaseExerciseOwner returns the created_by of the exercise that owns testCaseID.
+// testCaseCourseAndOwner returns the course_id and exercise created_by for a test case.
 // Returns pgx.ErrNoRows if the test case does not exist.
-func testCaseExerciseOwner(ctx context.Context, testCaseID string) (string, error) {
-	var owner string
-	err := db.Pool.QueryRow(ctx,
-		`SELECT e.created_by FROM test_cases tc
+func testCaseCourseAndOwner(ctx context.Context, testCaseID string) (courseID, ownerID string, err error) {
+	err = db.Pool.QueryRow(ctx,
+		`SELECT e.course_id, e.created_by FROM test_cases tc
 		 JOIN exercises e ON e.id = tc.exercise_id
 		 WHERE tc.id = $1`,
 		testCaseID,
-	).Scan(&owner)
-	return owner, err
+	).Scan(&courseID, &ownerID)
+	return
+}
+
+// canModifyInCourse checks write permission for an exercise or test case in courseID.
+// Admin: always. Professor: must own the resource (ownerID == userID). TA: must be enrolled.
+func canModifyInCourse(ctx context.Context, role, courseID, userID, ownerID string) (bool, error) {
+	switch role {
+	case auth.RoleAdmin:
+		return true, nil
+	case auth.RoleTeachingAssistant:
+		return isEnrolled(ctx, courseID, userID)
+	default: // professor
+		return ownerID == userID, nil
+	}
 }
 
 // scanExercise fills an Exercise from the 14 standard columns.
@@ -104,7 +118,8 @@ func ListHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `SELECT ` + exerciseFields + ` FROM exercises WHERE course_id = $1`
-	if !canManageExercise(role) {
+	// TAs are already verified as enrolled above; they can see unpublished exercises.
+	if !canManageExercise(role) && role != auth.RoleTeachingAssistant {
 		query += ` AND is_published = true`
 	}
 	query += ` ORDER BY created_at ASC LIMIT 200`
@@ -152,9 +167,14 @@ func CreateHandler(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	// Only the course owner or an admin may add exercises to a course.
-	if role != auth.RoleAdmin && courseCreatedBy != userID {
-		httputil.Error(w, "forbidden: only the course creator or an admin can add exercises to this course", http.StatusForbidden)
+	// Admin always allowed; TA must be enrolled; professor must own the course.
+	ok, err := canModifyInCourse(r.Context(), role, courseID, userID, courseCreatedBy)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		httputil.Error(w, "forbidden: only the course creator, an enrolled TA, or an admin can add exercises", http.StatusForbidden)
 		return
 	}
 
@@ -227,7 +247,8 @@ func GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	canSeeUnpublished := canManageExercise(role) || e.CreatedBy == userID
+	// TAs enrolled in the course can see unpublished exercises (enrollment verified below).
+	canSeeUnpublished := canManageExercise(role) || e.CreatedBy == userID || role == auth.RoleTeachingAssistant
 	if !e.IsPublished && !canSeeUnpublished {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
@@ -261,7 +282,7 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner, err := exerciseOwner(r.Context(), id)
+	courseID, owner, err := exerciseCourseAndOwner(r.Context(), id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
@@ -270,8 +291,13 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	if owner != userID && role != auth.RoleAdmin {
-		httputil.Error(w, "forbidden: only the exercise creator or an admin can update this exercise", http.StatusForbidden)
+	ok, err := canModifyInCourse(r.Context(), role, courseID, userID, owner)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		httputil.Error(w, "forbidden: only the exercise creator, an enrolled TA, or an admin can update this exercise", http.StatusForbidden)
 		return
 	}
 
@@ -303,13 +329,13 @@ func UpdateHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, e)
 }
 
-// DeleteHandler DELETE /exercises/{id}  [professor (owner), admin]
+// DeleteHandler DELETE /exercises/{id}  [professor (owner), enrolled TA, admin]
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	role := auth.RoleFromCtx(r.Context())
 	userID := auth.UserIDFromCtx(r.Context())
 
-	owner, err := exerciseOwner(r.Context(), id)
+	courseID, owner, err := exerciseCourseAndOwner(r.Context(), id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		httputil.Error(w, "exercise not found", http.StatusNotFound)
 		return
@@ -318,8 +344,13 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	if owner != userID && role != auth.RoleAdmin {
-		httputil.Error(w, "forbidden: only the exercise creator or an admin can delete this exercise", http.StatusForbidden)
+	ok, err := canModifyInCourse(r.Context(), role, courseID, userID, owner)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		httputil.Error(w, "forbidden: only the exercise creator, an enrolled TA, or an admin can delete this exercise", http.StatusForbidden)
 		return
 	}
 
@@ -415,21 +446,23 @@ func CreateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	role := auth.RoleFromCtx(r.Context())
 	userID := auth.UserIDFromCtx(r.Context())
 
-	// Only the exercise creator or an admin may add test cases.
-	if role != auth.RoleAdmin {
-		owner, err := exerciseOwner(r.Context(), exerciseID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			httputil.Error(w, "exercise not found", http.StatusNotFound)
-			return
-		}
-		if err != nil {
-			httputil.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if owner != userID {
-			httputil.Error(w, "forbidden: only the exercise creator or an admin can add test cases", http.StatusForbidden)
-			return
-		}
+	courseID, owner, err := exerciseCourseAndOwner(r.Context(), exerciseID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httputil.Error(w, "exercise not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	ok, err := canModifyInCourse(r.Context(), role, courseID, userID, owner)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		httputil.Error(w, "forbidden: only the exercise creator, an enrolled TA, or an admin can add test cases", http.StatusForbidden)
+		return
 	}
 
 	var req createTestCaseRequest
@@ -443,7 +476,7 @@ func CreateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var tc TestCase
-	err := db.Pool.QueryRow(r.Context(),
+	err = db.Pool.QueryRow(r.Context(),
 		`INSERT INTO test_cases (exercise_id, input, expected_output, is_hidden, ordinal)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id, exercise_id, input, expected_output, is_hidden, ordinal, created_at`,
@@ -463,21 +496,23 @@ func UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	role := auth.RoleFromCtx(r.Context())
 	userID := auth.UserIDFromCtx(r.Context())
 
-	// Only the exercise creator or an admin may update test cases.
-	if role != auth.RoleAdmin {
-		owner, err := testCaseExerciseOwner(r.Context(), id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			httputil.Error(w, "test case not found", http.StatusNotFound)
-			return
-		}
-		if err != nil {
-			httputil.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if owner != userID {
-			httputil.Error(w, "forbidden: only the exercise creator or an admin can modify test cases", http.StatusForbidden)
-			return
-		}
+	courseID, owner, err := testCaseCourseAndOwner(r.Context(), id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httputil.Error(w, "test case not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	ok, err := canModifyInCourse(r.Context(), role, courseID, userID, owner)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		httputil.Error(w, "forbidden: only the exercise creator, an enrolled TA, or an admin can modify test cases", http.StatusForbidden)
+		return
 	}
 
 	var req updateTestCaseRequest
@@ -487,7 +522,7 @@ func UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var tc TestCase
-	err := db.Pool.QueryRow(r.Context(),
+	err = db.Pool.QueryRow(r.Context(),
 		`UPDATE test_cases SET
 		     input           = COALESCE($1, input),
 		     expected_output = COALESCE($2, expected_output),
@@ -515,21 +550,23 @@ func DeleteTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	role := auth.RoleFromCtx(r.Context())
 	userID := auth.UserIDFromCtx(r.Context())
 
-	// Only the exercise creator or an admin may delete test cases.
-	if role != auth.RoleAdmin {
-		owner, err := testCaseExerciseOwner(r.Context(), id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			httputil.Error(w, "test case not found", http.StatusNotFound)
-			return
-		}
-		if err != nil {
-			httputil.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if owner != userID {
-			httputil.Error(w, "forbidden: only the exercise creator or an admin can delete test cases", http.StatusForbidden)
-			return
-		}
+	courseID, owner, err := testCaseCourseAndOwner(r.Context(), id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httputil.Error(w, "test case not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	ok, err := canModifyInCourse(r.Context(), role, courseID, userID, owner)
+	if err != nil {
+		httputil.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		httputil.Error(w, "forbidden: only the exercise creator, an enrolled TA, or an admin can delete test cases", http.StatusForbidden)
+		return
 	}
 
 	tag, err := db.Pool.Exec(r.Context(), `DELETE FROM test_cases WHERE id = $1`, id)

@@ -21,6 +21,9 @@
 	let deletingEx = $state<Record<string, boolean>>({});
 
 	const canManage = $derived(auth.user?.role === 'professor' || auth.user?.role === 'admin');
+	const canManageExercises = $derived(
+		canManage || (auth.user?.role === 'teaching_assistant' && enrolled)
+	);
 	const canEnroll = $derived(auth.user?.role === 'student' || auth.user?.role === 'teaching_assistant');
 	const canSeeMembers = $derived(
 		auth.user?.role === 'professor' || auth.user?.role === 'teaching_assistant' || auth.user?.role === 'admin'
@@ -155,12 +158,12 @@
 				<h2>Learning path
 					{#if canAccess}({exList.length} exercises){/if}
 				</h2>
-				{#if canManage}
+				{#if canManageExercises}
 					<a href="/courses/{id}/exercises/new" class="btn-sm">+ Add exercise</a>
 				{/if}
 			</div>
 
-			{#if !canManage && !enrolled && canEnroll}
+			{#if !canManageExercises && !enrolled && canEnroll}
 				<div class="enroll-gate">
 					<div class="gate-icon">🔒</div>
 					<p class="gate-title">Enroll to unlock exercises</p>
@@ -174,7 +177,7 @@
 
 			{:else if exList.length === 0}
 				<p class="empty-text">
-					{canManage ? 'No exercises yet. Add the first one above.' : 'No exercises available yet.'}
+					{canManageExercises ? 'No exercises yet. Add the first one above.' : 'No exercises available yet.'}
 				</p>
 
 			{:else}
@@ -187,7 +190,7 @@
 								sub="{ex.difficulty} · {ex.language} · +{xpFor(ex.difficulty)} XP"
 								href={canAccess ? `/exercises/${ex.id}` : ''}
 							/>
-							{#if canManage}
+							{#if canManageExercises}
 								<div class="ex-mgmt">
 									<a href="/exercises/{ex.id}/edit" class="btn-xs btn-outline">Edit</a>
 									<button
