@@ -32,7 +32,7 @@
 <div class="auth-page">
 	<div class="auth-card">
 		<h1>Sign in</h1>
-		<p class="subtitle">Welcome back to CS Platform</p>
+		<p class="subtitle">Welcome back to CS Educational Platform</p>
 
 		{#if error}
 			<div class="alert">{error}</div>

@@ -41,7 +41,7 @@
 <div class="auth-page">
 	<div class="auth-card">
 		<h1>Create account</h1>
-		<p class="subtitle">Join CS Platform today</p>
+		<p class="subtitle">Join CS Educational Platform today</p>
 
 		{#if error}
 			<div class="alert">{error}</div>
